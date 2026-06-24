@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row g-4 justify-content-center">
+    <!-- Left Column: User Card, Level & Badges -->
+    <div class="col-lg-5">
+        <!-- Profile Card -->
+        <div class="glass-card text-center py-4 mb-4">
+            <div class="rounded-circle bg-teal text-white fw-bold d-flex align-items-center justify-content-center mx-auto mb-3 shadow" style="width:80px; height:80px; font-size:2.2rem">
+                {{ user.username[0]|upper }}
+            </div>
+            
+            <h4 class="fw-bold mb-1">@{{ user.username }}</h4>
+            <p class="text-muted small mb-3">{{ user.email }}</p>
+            
+            <span class="xp-level-badge mb-3">Level {{ level }} Explorer</span>
+            
+            <!-- XP Progress -->
+            <div class="px-4 mt-2 text-start">
+                <div class="d-flex justify-content-between text-muted small">
+                    <span>XP Level Progress</span>
+                    <span>{{ xp }} / {{ (level ** 2) * 100 }} XP</span>
+                </div>
+                <div class="xp-progress-bar">
+                    {% set next_level_xp = ((level) ** 2) * 100 %}
+                    {% set current_level_xp = ((level - 1) ** 2) * 100 %}
+                    {% set progress_xp = xp - current_level_xp %}
+                    {% set required_xp = next_level_xp - current_level_xp %}
+                    {% set fill_percent = (progress_xp / required_xp * 100) | int if required_xp > 0 else 100 %}
+                    <div class="xp-progress-fill" style="width: {{ fill_percent }}%;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Badges & Achievements Grid -->
+        <div class="glass-card">
+            <h5 class="fw-bold mb-3"><i class="fa-solid fa-medal text-warning me-2"></i>Unlocked Badges</h5>
+            <div class="row g-3">
+                {% set badges_keys = [] %}
+                {% for badge in badges %}
+                    {% set _ = badges_keys.append(badge.achievement_key) %}
+                {% endfor %}
+
+                <!-- Maiden Voyage Badge -->
+                <div class="col-4 text-center">
+                    <div class="p-2 rounded-3 border {% if 'first_trip' in badges_keys %}bg-warning-soft border-warning{% else %}opacity-50 bg-light{% endif %}" style="min-height: 90px; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+                        <i class="fa-solid fa-plane-departure {% if 'first_trip' in badges_keys %}text-warning{% else %}text-muted{% endif %} fs-3 mb-1"></i>
+                        <small class="d-block fw-bold" style="font-size:0.65rem;">Maiden Voyage</small>
+                    </div>
+                </div>
+
+                <!-- RAG Wizard Badge -->
+                <div class="col-4 text-center">
+                    <div class="p-2 rounded-3 border {% if 'rag_wizard' in badges_keys %}bg-warning-soft border-warning{% else %}opacity-50 bg-light{% endif %}" style="min-height: 90px; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+                        <i class="fa-solid fa-book-atlas {% if 'rag_wizard' in badges_keys %}text-warning{% else %}text-muted{% endif %} fs-3 mb-1"></i>
+                        <small class="d-block fw-bold" style="font-size:0.65rem;">RAG Wizard</small>
+                    </div>
+                </div>
+
+                <!-- Budget Expert Badge -->
+                <div class="col-4 text-center">
+                    <div class="p-2 rounded-3 border {% if 'budget_expert' in badges_keys %}bg-warning-soft border-warning{% else %}opacity-50 bg-light{% endif %}" style="min-height: 90px; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+                        <i class="fa-solid fa-piggy-bank {% if 'budget_expert' in badges_keys %}text-warning{% else %}text-muted{% endif %} fs-3 mb-1"></i>
+                        <small class="d-block fw-bold" style="font-size:0.65rem;">Budget Expert</small>
+                    </div>
+                </div>
+
+                <!-- Master Explorer Badge -->
+                <div class="col-4 text-center">
+                    <div class="p-2 rounded-3 border {% if 'explorer' in badges_keys %}bg-warning-soft border-warning{% else %}opacity-50 bg-light{% endif %}" style="min-height: 90px; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+                        <i class="fa-solid fa-compass {% if 'explorer' in badges_keys %}text-warning{% else %}text-muted{% endif %} fs-3 mb-1"></i>
+                        <small class="d-block fw-bold" style="font-size:0.65rem;">Explorer</small>
+                    </div>
+                </div>
+
+                <!-- Chronicles Master Badge -->
+                <div class="col-4 text-center">
+                    <div class="p-2 rounded-3 border {% if 'journal_master' in badges_keys %}bg-warning-soft border-warning{% else %}opacity-50 bg-light{% endif %}" style="min-height: 90px; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+                        <i class="fa-solid fa-feather-pointed {% if 'journal_master' in badges_keys %}text-warning{% else %}text-muted{% endif %} fs-3 mb-1"></i>
+                        <small class="d-block fw-bold" style="font-size:0.65rem;">Chronicler</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Column: Stats & Settings -->
+    <div class="col-lg-5">
+        <!-- Stats Summary -->
+        <div class="glass-card mb-4">
+            <h5 class="fw-bold mb-3"><i class="fa-solid fa-chart-simple text-teal me-2"></i>Travel Statistics</h5>
+            <div class="row text-center g-2">
+                <div class="col-6">
+                    <div class="p-3 bg-light rounded-4">
+                        <h4 class="fw-bold text-teal m-0">{{ trips_count }}</h4>
+                        <small class="text-muted">Total Trips</small>
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="p-3 bg-light rounded-4">
+                        <h4 class="fw-bold text-teal m-0">{{ visited_cities }}</h4>
+                        <small class="text-muted">Cities Explored</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Form -->
+        <div class="glass-card">
+            <h5 class="fw-bold mb-3"><i class="fa-solid fa-gears text-teal me-2"></i>Account Details</h5>
+            <form method="POST">
+                <div class="mb-3">
+                    <label class="form-label small fw-bold">Username</label>
+                    <input type="text" name="username" class="form-control rounded-3" value="{{ user.username }}" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-bold">Email</label>
+                    <input type="email" name="email" class="form-control rounded-3" value="{{ user.email }}" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-bold">New Password (leave blank to keep)</label>
+                    <input type="password" name="password" class="form-control rounded-3" placeholder="••••••••">
+                </div>
+                <div class="d-flex justify-content-end">
+                    <button class="btn btn-premium rounded-pill px-4">Update Profile</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<style>
+    .bg-warning-soft { background-color: rgba(245, 158, 11, 0.08); }
+</style>
+{% endblock %}

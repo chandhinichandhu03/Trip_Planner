@@ -1,0 +1,11 @@
+Flask
+Flask-SQLAlchemy
+langchain
+langchain-community
+langchain-chroma
+langchain-ollama
+chromadb
+pypdf
+reportlab
+openpyxl
+flask-login

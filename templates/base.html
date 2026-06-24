@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GlobeTrotter - AI Travel Ecosystem</title>
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="app-wrapper">
+        {% if current_user.is_authenticated %}
+        <!-- Sidebar Navigation -->
+        <aside class="app-sidebar">
+            <a href="{{ url_for('dashboard') }}" class="sidebar-brand">
+                <i class="fa-solid fa-earth-americas text-teal me-2"></i>
+                <span>GlobeTrotter</span>
+            </a>
+            
+            <ul class="sidebar-menu">
+                <li>
+                    <a href="{{ url_for('dashboard') }}" class="sidebar-link {% if request.path == url_for('dashboard') %}active{% endif %}">
+                        <i class="fa-solid fa-chart-pie"></i>
+                        <span>Dashboard</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="{{ url_for('my_trips') }}" class="sidebar-link {% if request.path == url_for('my_trips') %}active{% endif %}">
+                        <i class="fa-solid fa-map-location-dot"></i>
+                        <span>My Trips</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="{{ url_for('community') }}" class="sidebar-link {% if request.path == url_for('community') or request.path == url_for('leaderboard_view') %}active{% endif %}">
+                        <i class="fa-solid fa-users"></i>
+                        <span>Community</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="{{ url_for('ai_chat_view') }}" class="sidebar-link {% if request.path == url_for('ai_chat_view') %}active{% endif %}">
+                        <i class="fa-solid fa-robot"></i>
+                        <span>AI Planner Chat</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="{{ url_for('calendar_view') }}" class="sidebar-link {% if request.path == url_for('calendar_view') %}active{% endif %}">
+                        <i class="fa-solid fa-calendar-days"></i>
+                        <span>Calendar</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="{{ url_for('profile') }}" class="sidebar-link {% if request.path == url_for('profile') %}active{% endif %}">
+                        <i class="fa-solid fa-user-gear"></i>
+                        <span>My Profile</span>
+                    </a>
+                </li>
+                {% if current_user.is_admin %}
+                <li>
+                    <a href="{{ url_for('admin_panel') }}" class="sidebar-link {% if request.path == url_for('admin_panel') %}active{% endif %}">
+                        <i class="fa-solid fa-shield-halved text-warning"></i>
+                        <span>Admin</span>
+                    </a>
+                </li>
+                {% endif %}
+            </ul>
+
+            <!-- Logout Link -->
+            <div class="mt-auto">
+                <a href="{{ url_for('logout') }}" class="sidebar-link text-danger">
+                    <i class="fa-solid fa-right-from-bracket"></i>
+                    <span>Logout</span>
+                </a>
+            </div>
+        </aside>
+        {% endif %}
+
+        <!-- Content Area -->
+        <main class="app-content" style="{% if not current_user.is_authenticated %}margin-left: 0; width: 100%;{% endif %}">
+            <!-- Header bar for logged in users -->
+            {% if current_user.is_authenticated %}
+            <div class="header-actions mb-4">
+                <div class="d-flex align-items-center">
+                    <button class="btn btn-outline-secondary me-3 d-lg-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#sidebarOffcanvas">
+                        <i class="fa-solid fa-bars"></i>
+                    </button>
+                    <h2 class="heading-title m-0">GlobeTrotter AI</h2>
+                </div>
+                
+                <div class="d-flex align-items-center gap-3">
+                    <!-- Notification Bell Dropdown -->
+                    <div class="dropdown">
+                        <button class="btn btn-light position-relative rounded-circle shadow-sm" type="button" id="notifDropdown" data-bs-toggle="dropdown" aria-expanded="false" onclick="fetchNotifications()">
+                            <i class="fa-solid fa-bell text-muted"></i>
+                            <span id="notif-badge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none">
+                                0
+                            </span>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end shadow border-0 p-2" aria-labelledby="notifDropdown" id="notif-list" style="width: 320px; max-height: 400px; overflow-y: auto; border-radius: 12px;">
+                            <li><h6 class="dropdown-header">Recent Alerts</h6></li>
+                            <div id="notif-items">
+                                <li class="text-center py-3 text-muted"><small>No notifications</small></li>
+                            </div>
+                        </ul>
+                    </div>
+
+                    <!-- Dark Mode Toggler -->
+                    <button id="theme-toggle" class="btn btn-light rounded-circle shadow-sm" type="button">
+                        <i class="fa-solid fa-moon text-muted"></i>
+                    </button>
+                    
+                    <!-- Quick Profile XP summary -->
+                    <a href="{{ url_for('profile') }}" class="d-flex align-items-center text-decoration-none bg-white py-1 px-3 border rounded-pill shadow-sm">
+                        <span class="xp-level-badge me-2">Lv {{ current_user.level or 1 }}</span>
+                        <small class="text-secondary fw-semibold">{{ current_user.username }}</small>
+                    </a>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Message Alerts -->
+            {% with messages = get_flashed_messages() %}
+                {% if messages %}
+                    <div class="alert alert-info alert-dismissible fade show border-0 shadow-sm glass-card" role="alert" style="background: rgba(229,245,245,0.8); border-left: 4px solid var(--primary);">
+                        {{ messages[0] }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endif %}
+            {% endwith %}
+
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Dark Mode Logic
+        const themeToggle = document.getElementById('theme-toggle');
+        const body = document.body;
+
+        // Load Saved Preference
+        if (localStorage.getItem('dark-mode') === 'true') {
+            body.classList.add('dark-mode');
+            if (themeToggle) themeToggle.innerHTML = '<i class="fa-solid fa-sun text-warning"></i>';
+        }
+
+        if (themeToggle) {
+            themeToggle.addEventListener('click', () => {
+                body.classList.toggle('dark-mode');
+                const isDark = body.classList.contains('dark-mode');
+                localStorage.setItem('dark-mode', isDark);
+                themeToggle.innerHTML = isDark ? 
+                    '<i class="fa-solid fa-sun text-warning"></i>' : 
+                    '<i class="fa-solid fa-moon text-muted"></i>';
+            });
+        }
+
+        // Notification Loading Logic
+        function fetchNotifications() {
+            fetch('/api/notifications')
+                .then(r => r.json())
+                .then(data => {
+                    const itemsDiv = document.getElementById('notif-items');
+                    const badge = document.getElementById('notif-badge');
+                    
+                    if (data.length === 0) {
+                        itemsDiv.innerHTML = '<li class="text-center py-3 text-muted"><small>No notifications yet</small></li>';
+                        badge.classList.add('d-none');
+                        return;
+                    }
+
+                    let html = '';
+                    let unreadCount = 0;
+
+                    data.forEach(n => {
+                        if (!n.is_read) unreadCount++;
+                        let iconClass = 'fa-circle-info text-info';
+                        if (n.type === 'budget') iconClass = 'fa-triangle-exclamation text-danger';
+                        if (n.type === 'achievement') iconClass = 'fa-trophy text-warning';
+                        if (n.type === 'social') iconClass = 'fa-heart text-danger';
+
+                        html += `
+                            <li class="dropdown-item py-2 border-bottom ${n.is_read ? '' : 'bg-light fw-bold'}" style="white-space: normal;" onclick="markRead(${n.id})">
+                                <div class="d-flex align-items-start">
+                                    <i class="fa-solid ${iconClass} mt-1 me-2"></i>
+                                    <div>
+                                        <div class="small">${n.title}</div>
+                                        <p class="m-0 text-muted" style="font-size:0.75rem">${n.content}</p>
+                                        <small class="text-secondary" style="font-size:0.65rem">${n.time}</small>
+                                    </div>
+                                </div>
+                            </li>
+                        `;
+                    });
+
+                    itemsDiv.innerHTML = html;
+
+                    if (unreadCount > 0) {
+                        badge.innerText = unreadCount;
+                        badge.classList.remove('d-none');
+                    } else {
+                        badge.classList.add('d-none');
+                    }
+                });
+        }
+
+        function markRead(id) {
+            fetch(`/api/notifications/read/${id}`, {method: 'POST'})
+                .then(() => fetchNotifications());
+        }
+
+        // Trigger dynamic offline toasts for UI notifications
+        function triggerToast(title, content) {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = 'custom-toast';
+            toast.innerHTML = `
+                <div class="d-flex align-items-center">
+                    <i class="fa-solid fa-circle-check text-success me-3 fs-4"></i>
+                    <div>
+                        <strong class="d-block">${title}</strong>
+                        <small class="text-muted">${content}</small>
+                    </div>
+                </div>
+            `;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 500);
+            }, 3500);
+        }
+
+        // Load notification counts on startup
+        {% if current_user.is_authenticated %}
+        setInterval(fetchNotifications, 10000);
+        fetchNotifications();
+        {% endif %}
+    </script>
+</body>
+</html>

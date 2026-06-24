@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row g-4">
+    <!-- Left Feed Column: Pinterest Cards of Public Itineraries -->
+    <div class="col-lg-8">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h3 class="fw-bold m-0"><i class="fa-solid fa-users text-teal me-2"></i>Community Itineraries</h3>
+            <a href="{{ url_for('leaderboard_view') }}" class="btn btn-sm btn-light rounded-pill px-3 shadow-sm"><i class="fa-solid fa-arrow-rotate-right me-1 text-teal"></i>Refresh Feed</a>
+        </div>
+
+        <div class="pinterest-grid">
+            {% for trip in trips %}
+            <div class="glass-card p-3 card h-100" style="break-inside: avoid; transition: transform 0.2s;">
+                <div class="d-flex align-items-center gap-2 mb-3">
+                    <div class="rounded-circle bg-teal text-white fw-bold d-flex align-items-center justify-content-center" style="width:32px; height:32px">
+                        {{ trip.author.username[0]|upper }}
+                    </div>
+                    <div>
+                        <strong class="d-block small">@{{ trip.author.username }}</strong>
+                        <span class="xp-level-badge" style="font-size:0.65rem; padding: 1px 5px;">Lv {{ trip.author.level }}</span>
+                    </div>
+                </div>
+                
+                <h5 class="fw-bold mb-1">{{ trip.name }}</h5>
+                <p class="text-muted small mb-2"><i class="fa-solid fa-location-dot me-1"></i>{{ trip.destination }}</p>
+                <small class="text-secondary d-block mb-3">{{ trip.start_date }} to {{ trip.end_date }}</small>
+                
+                <div class="d-flex justify-content-between align-items-center border-top pt-3 mt-auto">
+                    <div class="d-flex gap-2">
+                        <a href="{{ url_for('view_trip', trip_id=trip.id) }}" class="btn btn-sm btn-premium px-3">View</a>
+                        <a href="{{ url_for('copy_trip', trip_id=trip.id) }}" class="btn btn-sm btn-light" title="Copy itinerary template"><i class="fa-solid fa-clone"></i></a>
+                    </div>
+                    
+                    <div class="text-muted small">
+                        <i class="fa-solid fa-heart text-danger me-1"></i>{{ trip.likes|length }}
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <div class="glass-card text-center py-5 w-100">
+                <i class="fa-solid fa-face-meh text-muted fs-1 mb-3"></i>
+                <p class="text-muted">No public itineraries shared yet.</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Right Column Sidebar: Leaderboard & Trending tags -->
+    <div class="col-lg-4">
+        <!-- Community Leaderboard -->
+        <div class="glass-card mb-4">
+            <h5 class="fw-bold mb-3"><i class="fa-solid fa-ranking-star text-warning me-2"></i>Traveler Leaderboard</h5>
+            
+            {% for user in leaderboard %}
+            <div class="d-flex align-items-center justify-content-between p-2 rounded-3 bg-light mb-2">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="fw-bold text-secondary me-1">#{{ loop.index }}</span>
+                    <div class="rounded-circle bg-teal text-white fw-bold d-flex align-items-center justify-content-center" style="width:28px; height:28px; font-size:0.8rem">
+                        {{ user.username[0]|upper }}
+                    </div>
+                    <div>
+                        <strong class="small d-block">@{{ user.username }}</strong>
+                        <span class="xp-level-badge" style="font-size:0.6rem; padding: 1px 4px;">Lv {{ user.level or 1 }}</span>
+                    </div>
+                </div>
+                <small class="text-teal fw-semibold">{{ user.xp or 0 }} XP</small>
+            </div>
+            {% else %}
+            <p class="text-muted text-center"><small>No data available</small></p>
+            {% endfor %}
+        </div>
+
+        <!-- Trending Destinations -->
+        <div class="glass-card">
+            <h5 class="fw-bold mb-3"><i class="fa-solid fa-arrow-trend-up text-danger me-2"></i>Trending Destinations</h5>
+            
+            {% for city in trending_cities %}
+            <div class="d-flex align-items-center justify-content-between border-bottom py-2">
+                <div>
+                    <strong class="d-block text-secondary small">{{ city.name }}, {{ city.country or '' }}</strong>
+                </div>
+                <span class="badge bg-light text-teal">{{ city.popularity }} plans</span>
+            </div>
+            {% else %}
+            <p class="text-muted text-center"><small>No trending destinations yet</small></p>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}

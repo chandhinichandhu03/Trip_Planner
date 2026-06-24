@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block content %}
+<!-- Header Card -->
+<div class="glass-card mb-4">
+    <div class="row align-items-center">
+        <div class="col-md-7">
+            <h3 class="fw-bold m-0"><i class="fa-solid fa-suitcase-rolling text-teal me-2"></i>Packing Assistant: {{ trip.name }}</h3>
+            <p class="text-muted m-0">Create customized item lists for your trip to {{ trip.destination }}. Travel Style: {{ trip.style or 'Solo' }}.</p>
+        </div>
+        <div class="col-md-5 text-md-end mt-3 mt-md-0 d-flex gap-2 justify-content-md-end flex-wrap">
+            <button class="btn btn-premium btn-sm rounded-pill animate-pulse" onclick="generateAIPackingList()">
+                <i class="fa-solid fa-wand-magic-sparkles me-2"></i>Generate AI Packing Suggestion
+            </button>
+            <a href="{{ url_for('view_trip', trip_id=trip.id) }}" class="btn btn-outline-secondary btn-sm rounded-pill"><i class="fa-solid fa-arrow-left me-1"></i>Back</a>
+        </div>
+    </div>
+</div>
+
+<!-- Progress metrics -->
+<div class="glass-card mb-4" id="packing-progress-container" style="display:none">
+    <div class="d-flex justify-content-between text-muted small mb-1">
+        <span class="fw-bold"><i class="fa-solid fa-clipboard-list text-teal me-1"></i>Trip Packing Progress</span>
+        <span id="progress-text" class="fw-bold text-teal">0 / 0 Packed (0%)</span>
+    </div>
+    <div class="progress xp-progress-bar">
+        <div class="progress-bar xp-progress-fill" id="progress-bar-fill" role="progressbar" style="width: 0%"></div>
+    </div>
+</div>
+
+<!-- Dynamic lists panels -->
+<div class="row g-4" id="packing-lists-row">
+    {% for list in trip.packing_lists %}
+    <div class="col-md-6 packing-list-panel">
+        <div class="glass-card h-100 p-4">
+            <h5 class="fw-bold mb-3 border-bottom pb-2 text-teal d-flex align-items-center">
+                {% if list.name == 'Clothing' %}
+                    <i class="fa-solid fa-shirt me-2"></i>
+                {% elif list.name == 'Electronics' %}
+                    <i class="fa-solid fa-laptop-code me-2"></i>
+                {% elif list.name == 'Medicine & Toiletries' or list.name == 'Medicine' %}
+                    <i class="fa-solid fa-prescription-bottle-medical me-2"></i>
+                {% else %}
+                    <i class="fa-solid fa-clipboard-check me-2"></i>
+                {% endif %}
+                {{ list.name }}
+            </h5>
+            
+            <div class="list-group list-group-flush mb-3">
+                {% for item in list.items %}
+                <div class="list-group-item d-flex justify-content-between align-items-center border-0 bg-transparent py-2 px-0 checkbox-wrapper">
+                    <div class="form-check custom-checkbox-item w-100 py-1 px-2 rounded">
+                        <input class="form-check-input packing-checkbox custom-cb" type="checkbox" data-id="{{ item.id }}" id="itemCheck-{{ item.id }}" {% if item.is_completed %}checked{% endif %} onclick="togglePackingItem({{ item.id }})">
+                        <label class="form-check-label {% if item.is_completed %}text-decoration-line-through text-muted{% endif %} w-100 cursor-pointer" id="itemLabel-{{ item.id }}" for="itemCheck-{{ item.id }}">
+                            {{ item.name }}
+                        </label>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <!-- Quick add item form -->
+            <form method="POST" action="{{ url_for('api_packing_add') }}" class="mt-auto">
+                <input type="hidden" name="list_id" value="{{ list.id }}">
+                <div class="input-group input-group-sm">
+                    <input type="text" name="name" class="form-control rounded-start-pill border-light bg-light px-3" placeholder="Add custom item..." required>
+                    <button class="btn btn-outline-teal rounded-end-pill px-3 border-light bg-light"><i class="fa-solid fa-plus text-teal"></i></button>
+                </div>
+            </form>
+        </div>
+    </div>
+    {% else %}
+    <div class="col-12 text-center py-5" id="empty-packing-view">
+        <div class="glass-card py-5">
+            <i class="fa-solid fa-shirt text-muted fs-1 mb-3"></i>
+            <p class="text-muted">No checklists generated. Click 'Generate AI Packing Suggestion' to get a customized clothing and electronics checklist from Ollama!</p>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<script>
+    function calculatePackingProgress() {
+        const checkboxes = document.querySelectorAll('.packing-checkbox');
+        const container = document.getElementById('packing-progress-container');
+        
+        if (checkboxes.length === 0) {
+            container.style.display = 'none';
+            return;
+        }
+        
+        container.style.display = 'block';
+        let completed = 0;
+        checkboxes.forEach(cb => {
+            if (cb.checked) completed++;
+        });
+        
+        const total = checkboxes.length;
+        const percent = Math.round((completed / total) * 100);
+        
+        document.getElementById('progress-text').innerText = `${completed} / ${total} Packed (${percent}%)`;
+        document.getElementById('progress-bar-fill').style.width = `${percent}%`;
+    }
+
+    function togglePackingItem(itemId) {
+        fetch(`/api/packing/item/${itemId}/toggle`, { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    const label = document.getElementById(`itemLabel-${itemId}`);
+                    const checkbox = document.getElementById(`itemCheck-${itemId}`);
+                    
+                    if (data.is_completed) {
+                        label.classList.add('text-decoration-line-through', 'text-muted');
+                        triggerToast("Packed!", "+2 XP awarded.");
+                    } else {
+                        label.classList.remove('text-decoration-line-through', 'text-muted');
+                    }
+                    calculatePackingProgress();
+                }
+            });
+    }
+
+    function generateAIPackingList() {
+        const row = document.getElementById('packing-lists-row');
+        const emptyView = document.getElementById('empty-packing-view');
+        
+        if (emptyView) emptyView.classList.add('d-none');
+        row.innerHTML = `
+            <div class="col-12 text-center py-5">
+                <div class="glass-card py-5">
+                    <div class="spinner-border text-teal mb-3" role="status"></div>
+                    <p class="text-muted">Generating customized lists with Local AI (Ollama)...</p>
+                </div>
+            </div>
+        `;
+        
+        fetch(`/api/trip/{{ trip.id }}/packing/generate`, { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    triggerToast("AI Generator", "List generated successfully.");
+                    location.reload();
+                } else {
+                    alert('Generating list failed. Verify Ollama status or model configuration.');
+                    location.reload();
+                }
+            });
+    }
+
+    // Run progress count on page startup
+    calculatePackingProgress();
+</script>
+{% endblock %}

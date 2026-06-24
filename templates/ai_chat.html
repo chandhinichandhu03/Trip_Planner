@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row g-4">
+    <!-- Chat Area Column -->
+    <div class="col-lg-8">
+        <div class="glass-card mb-4 p-0 overflow-hidden d-flex flex-column" style="height: 600px;">
+            <!-- Header -->
+            <div class="p-3 bg-teal text-white d-flex align-items-center justify-content-between">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="fa-solid fa-robot fs-4"></i>
+                    <div>
+                        <strong class="d-block">GlobeTrotter AI Companion</strong>
+                        <small class="text-white-50">Local LLM Chat Engine (Offline)</small>
+                    </div>
+                </div>
+                <span class="badge bg-light text-teal rounded-pill">ChromaDB Context Active</span>
+            </div>
+
+            <!-- Chat Messages Scroll Area -->
+            <div class="chat-window flex-grow-1 d-flex flex-column" id="chat-messages-container" style="border: none; border-radius: 0; background: var(--bg-color);">
+                {% for msg in chat_history %}
+                <div class="chat-bubble {{ msg.role }} shadow-sm">
+                    <div class="small fw-bold mb-1">{{ 'You' if msg.role == 'user' else 'AI Agent' }}</div>
+                    <div style="font-size:0.92rem; line-height:1.5;">
+                        <!-- simple formatting offline -->
+                        {{ msg.content|replace('\n', '<br>')|safe }}
+                    </div>
+                    <small class="text-secondary d-block text-end mt-1" style="font-size:0.65rem;">{{ msg.timestamp.strftime('%H:%M') }}</small>
+                </div>
+                {% else %}
+                <div class="my-auto text-center text-muted px-4">
+                    <i class="fa-solid fa-earth-americas text-teal fs-1 mb-3 opacity-50"></i>
+                    <h5>Welcome to your AI Travel Companion!</h5>
+                    <p class="small">I can design day-wise itineraries, build customized packing lists, evaluate your spending, and lookup uploaded travel guides. Click a suggestion below to start.</p>
+                </div>
+                {% endfor %}
+                <!-- Typing bubble mock -->
+                <div class="chat-bubble assistant shadow-sm d-none" id="typing-bubble">
+                    <div class="d-flex align-items-center gap-1">
+                        <span class="spinner-grow spinner-grow-sm text-teal" role="status"></span>
+                        <small class="text-secondary fw-semibold">AI is thinking...</small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Suggested Prompt Chips -->
+            <div class="p-3 border-top bg-light">
+                <small class="text-muted fw-bold d-block mb-2">Suggested Prompts:</small>
+                <div class="d-flex gap-2 flex-wrap">
+                    <button class="btn btn-sm btn-white border rounded-pill text-teal" onclick="sendSuggested('Plan a 4-day backpacking adventure to Lisbon with a $400 budget')">🎒 4-day Lisbon Backpacking</button>
+                    <button class="btn btn-sm btn-white border rounded-pill text-teal" onclick="sendSuggested('Help me plan a family trip to Tokyo with kid-friendly activities')">🗼 Family trip to Tokyo</button>
+                    <button class="btn btn-sm btn-white border rounded-pill text-teal" onclick="sendSuggested('Compare the travel cost index of Paris versus Bali')">✈️ Paris vs Bali Cost comparison</button>
+                </div>
+            </div>
+
+            <!-- Input Bar -->
+            <div class="p-3 border-top bg-white">
+                <div class="input-group">
+                    <input type="text" id="chat-input" class="form-control rounded-start-pill border-light bg-light py-2 px-3" placeholder="Ask your assistant anything about travel..." onkeypress="handleKeyPress(event)">
+                    <button class="btn btn-premium rounded-end-pill px-4" onclick="sendMessage()"><i class="fa-solid fa-paper-plane"></i></button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- RAG Document Upload Sidebar -->
+    <div class="col-lg-4">
+        <!-- RAG Ingestion Upload Box -->
+        <div class="glass-card mb-4">
+            <h5 class="fw-bold mb-3"><i class="fa-solid fa-file-pdf text-teal me-2"></i>RAG Knowledge Base</h5>
+            <p class="text-muted small">Upload PDFs, custom itineraries, travel guides, or notes. The local AI will extract and index the text into ChromaDB vector search.</p>
+            
+            <div class="border border-2 border-dashed rounded-3 p-4 text-center bg-light" style="cursor: pointer;" onclick="document.getElementById('rag-file-input').click()">
+                <i class="fa-solid fa-cloud-arrow-up fs-2 text-teal mb-2"></i>
+                <span class="d-block small fw-bold text-secondary">Drop PDFs/TXT here or click to browse</span>
+                <input type="file" id="rag-file-input" class="d-none" accept=".pdf,.txt" onchange="uploadRAGDocument(this)">
+            </div>
+            
+            <div class="progress mt-3 d-none" id="upload-progress-bar" style="height:6px">
+                <div class="progress-bar progress-bar-striped progress-bar-animated bg-success" style="width: 100%"></div>
+            </div>
+        </div>
+
+        <!-- Loaded Documents List -->
+        <div class="glass-card">
+            <h5 class="fw-bold mb-3"><i class="fa-solid fa-cabinet-filing text-teal me-2"></i>Indexed Files</h5>
+            <div id="rag-docs-list">
+                {% for doc in documents %}
+                <div class="d-flex align-items-center justify-content-between p-2 rounded-3 bg-light mb-2">
+                    <div class="d-flex align-items-center gap-2 overflow-hidden">
+                        <i class="fa-solid fa-file text-teal"></i>
+                        <span class="small fw-semibold text-truncate" style="max-width: 180px;">{{ doc.filename }}</span>
+                    </div>
+                    <small class="text-secondary">{{ doc.uploaded_at.strftime('%Y-%m-%d') }}</small>
+                </div>
+                {% else %}
+                <p class="text-muted text-center m-0"><small>No guides uploaded yet</small></p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const messagesContainer = document.getElementById('chat-messages-container');
+    
+    // Scroll chat window to bottom
+    function scrollToBottom() {
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+    scrollToBottom();
+
+    function handleKeyPress(e) {
+        if (e.key === 'Enter') {
+            sendMessage();
+        }
+    }
+
+    function sendMessage() {
+        const input = document.getElementById('chat-input');
+        const text = input.value.trim();
+        if (!text) return;
+        
+        // Append user bubble in UI
+        appendBubble('user', text);
+        input.value = '';
+        
+        // Show typing indicator
+        const typing = document.getElementById('typing-bubble');
+        typing.classList.remove('d-none');
+        scrollToBottom();
+
+        fetch('/api/ai/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: text })
+        })
+        .then(r => r.json())
+        .then(data => {
+            typing.classList.add('d-none');
+            if (data.response) {
+                appendBubble('assistant', data.response);
+                triggerToast("GlobeTrotter AI", "New message received.");
+            } else {
+                appendBubble('assistant', 'Sorry, I encountered an issue querying the model.');
+            }
+        });
+    }
+
+    function sendSuggested(promptText) {
+        document.getElementById('chat-input').value = promptText;
+        sendMessage();
+    }
+
+    function appendBubble(role, text) {
+        const typing = document.getElementById('typing-bubble');
+        const bubble = document.createElement('div');
+        bubble.className = `chat-bubble ${role} shadow-sm`;
+        
+        const now = new Date();
+        const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+        
+        let htmlText = text.replace(/\n/g, "<br>").replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+        
+        bubble.innerHTML = `
+            <div class="small fw-bold mb-1">${role === 'user' ? 'You' : 'AI Agent'}</div>
+            <div style="font-size:0.92rem; line-height:1.5;">${htmlText}</div>
+            <small class="text-secondary d-block text-end mt-1" style="font-size:0.65rem;">${time}</small>
+        `;
+        messagesContainer.insertBefore(bubble, typing);
+        scrollToBottom();
+    }
+
+    // Document RAG Uploader
+    function uploadRAGDocument(input) {
+        const file = input.files[0];
+        if (!file) return;
+        
+        const progress = document.getElementById('upload-progress-bar');
+        progress.classList.remove('d-none');
+        
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        fetch('/api/ai/upload_rag', {
+            method: 'POST',
+            body: formData
+        })
+        .then(r => r.json())
+        .then(data => {
+            progress.classList.add('d-none');
+            input.value = '';
+            
+            if (data.success) {
+                triggerToast("File Indexed", "ChromaDB vector space populated successfully.");
+                // Reload page to refresh file listings
+                location.reload();
+            } else {
+                alert(`Upload failed: ${data.error}`);
+            }
+        });
+    }
+</script>
+
+<style>
+    .btn-white { background-color: white; color: var(--text-primary); }
+    .btn-white:hover { background-color: var(--bg-color); color: var(--primary); }
+</style>
+{% endblock %}

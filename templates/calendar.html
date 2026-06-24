@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<h2 class="mb-4">{{ title }}</h2>
+<div class="row">
+    {% for trip in trips %}
+    <div class="col-md-4">
+        <div class="card mb-3">
+            <div class="card-body">
+                <h5 class="card-title"><a href="{{ url_for('view_trip', trip_id=trip.id) }}">{{ trip.name }}</a></h5>
+                <p class="card-text small text-muted">{{ trip.destination }} • {{ trip.start_date }} - {{ trip.end_date }}</p>
+                <div class="d-flex justify-content-between">
+                    <a href="{{ url_for('view_trip', trip_id=trip.id) }}" class="btn btn-sm btn-primary">View</a>
+                    {% if trip.author == current_user %}
+                    <a href="{{ url_for('create_trip') }}" class="btn btn-sm btn-outline-secondary">Edit</a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="col-12"><div class="alert alert-light">No trips found.</div></div>
+    {% endfor %}
+</div>
+{% endblock %}

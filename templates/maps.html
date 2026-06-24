@@ -1,0 +1,1409 @@
+{% extends "base.html" %}
+{% block content %}
+<!-- Include Leaflet CSS and JS for watermark-free maps -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+<!-- Header details -->
+<div class="glass-card mb-4">
+    <div class="row align-items-center">
+        <div class="col-md-7">
+            <h3 class="fw-bold m-0"><i class="fa-solid fa-map-location text-teal me-2"></i>Interactive Maps & Place Notes: {{ trip.name }}</h3>
+            <p class="text-muted m-0">Log coordinates and coordinate listings to map your destinations. Switch seamlessly between offline and live modes.</p>
+        </div>
+        <div class="col-md-5 text-md-end mt-3 mt-md-0 d-flex gap-2 justify-content-md-end">
+            <button class="btn btn-premium btn-sm rounded-pill" id="btn-open-add-modal" type="button">
+                <i class="fa-solid fa-location-crosshairs me-2"></i>Add Location Marker
+            </button>
+            <a href="{{ url_for('view_trip', trip_id=trip.id) }}" class="btn btn-outline-secondary btn-sm rounded-pill"><i class="fa-solid fa-arrow-left me-1"></i>Back</a>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Map Plotting Canvas / Leaflet Map -->
+    <div class="col-lg-8">
+        <div class="glass-card p-3 text-center h-100">
+            <!-- Search bar & voice & suggestions wrapper -->
+            <div class="position-relative w-100 mb-3 text-start">
+                <div class="input-group shadow-sm rounded-pill overflow-hidden border">
+                    <span class="input-group-text bg-white border-0 ps-3 text-muted"><i class="fa-solid fa-magnifying-glass"></i></span>
+                    <input type="text" id="map-search-input" class="form-control border-0 bg-white" placeholder="Search a place online (e.g. Bandipur National Park)..." autocomplete="off">
+                    <button class="btn bg-white border-0 text-muted px-3" id="voice-search-btn" title="Voice Search" type="button">
+                        <i class="fa-solid fa-microphone"></i>
+                    </button>
+                    <button class="btn btn-premium px-4" id="map-search-submit" type="button">Search</button>
+                </div>
+                <!-- Suggestions dropdown -->
+                <div id="search-suggestions" class="dropdown-menu w-100 p-2 position-absolute" style="display: none; z-index: 1050; max-height: 250px; overflow-y: auto;"></div>
+            </div>
+
+            <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-3">
+                <span class="small fw-semibold text-muted" id="map-title-label">Offline Interactive Coordinate Map Grid</span>
+                <div class="d-flex gap-2 align-items-center flex-wrap">
+                    <button class="btn btn-sm btn-outline-secondary rounded-pill py-1 px-3" id="btn-filters-toggle" type="button">
+                        <i class="fa-solid fa-sliders me-1 text-teal"></i>Filters
+                    </button>
+                    <!-- Roadmap vs Satellite controls -->
+                    <div class="btn-group btn-group-sm border rounded-pill overflow-hidden p-0 bg-light" id="map-type-group" style="display: none;" role="group">
+                        <button type="button" class="btn btn-light px-3 py-1 active" id="btn-roadmap">Map</button>
+                        <button type="button" class="btn btn-light px-3 py-1" id="btn-satellite">Satellite</button>
+                    </div>
+                    <!-- Offline vs Online controls -->
+                    <div class="btn-group btn-group-sm border rounded-pill overflow-hidden p-0 bg-light" role="group">
+                        <button type="button" class="btn btn-light px-3 py-1 active" id="btn-offline">Offline Grid</button>
+                        <button type="button" class="btn btn-light px-3 py-1" id="btn-online">Online Map</button>
+                    </div>
+                    <button class="btn btn-sm btn-light py-1 px-3 rounded-pill" id="btn-redraw"><i class="fa-solid fa-arrows-rotate me-1 text-teal"></i>Redraw</button>
+                </div>
+            </div>
+
+            <!-- Collapsible Filters Panel -->
+            <div class="collapse mb-3" id="filtersCollapse">
+                <div class="card card-body bg-light border-0 rounded-4 shadow-sm p-3 text-start">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label small fw-bold text-muted mb-1">Category Filter</label>
+                            <select id="filter-category" class="form-select form-select-sm rounded-3">
+                                <option value="all">All Categories</option>
+                                <option value="Sightseeing">Sightseeing</option>
+                                <option value="Dining">Dining</option>
+                                <option value="Lodging">Lodging</option>
+                                <option value="Transit">Transit</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-bold text-muted mb-1">Proximity Search Radius</label>
+                            <select id="filter-radius" class="form-select form-select-sm rounded-3">
+                                <option value="0">Disabled (Show All)</option>
+                                <option value="1">1 km</option>
+                                <option value="5">5 km</option>
+                                <option value="10">10 km</option>
+                                <option value="25">25 km</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-bold text-muted mb-1">Sort Stop Ordering</label>
+                            <select id="filter-sort" class="form-select form-select-sm rounded-3">
+                                <option value="default">Trip Sequence (Default)</option>
+                                <option value="nearest">Nearest Location First</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="bg-light rounded-4 p-2 shadow-sm border border-light" style="overflow: hidden; min-height: 400px; display: flex; align-items: center; justify-content: center; position: relative;">
+                <!-- Offline Canvas Map -->
+                <canvas id="vectorMapCanvas" width="650" height="380" style="background-color: var(--sidebar-bg); border-radius: 12px; max-width: 100%; height: auto; border: 1px solid var(--border-color);"></canvas>
+                
+                <!-- Online Map Container -->
+                <div id="googleMapContainer" style="width: 100%; height: 380px; border-radius: 12px; display: none; border: 1px solid var(--border-color); z-index: 10;">
+                    <!-- Floating Map Controls Overlay -->
+                    <div class="map-floating-controls d-flex flex-column gap-2">
+                        <button type="button" class="btn-floating-map" id="btn-gps-locate" title="Center on My Location">
+                            <i class="fa-solid fa-location-crosshairs text-primary"></i>
+                        </button>
+                        <button type="button" class="btn-floating-map" id="btn-fullscreen-toggle" title="Toggle Fullscreen">
+                            <i class="fa-solid fa-expand text-secondary"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <small class="text-muted d-block mt-2" id="map-desc-label">Vector lines display travel route connections dynamically between plotted coordinates.</small>
+
+            <!-- Route & Travel Summary Panel -->
+            <div id="route-summary-panel" class="mt-3 p-3 bg-light rounded-4 border text-start d-none">
+                <h6 class="fw-bold mb-2 text-teal"><i class="fa-solid fa-route me-2"></i>Trip Route Summary</h6>
+                <div class="row g-2 text-muted small">
+                    <div class="col-6 col-md-3">
+                        <span class="d-block fw-semibold text-dark">Stops:</span>
+                        <span id="route-stops-count">0</span>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <span class="d-block fw-semibold text-dark">Total Distance:</span>
+                        <span id="route-total-distance">0.0 km</span>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <span class="d-block fw-semibold text-dark">Est. Driving Time:</span>
+                        <span id="route-drive-time">0m</span>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <span class="d-block fw-semibold text-dark">Est. Walking Time:</span>
+                        <span id="route-walk-time">0m</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Plotted Places List & Detailed View -->
+    <div class="col-lg-4 d-flex flex-column gap-4">
+        <div class="glass-card">
+            <h5 class="fw-bold mb-3 border-bottom pb-2">Plotted Locations</h5>
+            <div id="plotted-locations-list" class="list-group list-group-flush" style="max-height: 350px; overflow-y: auto;">
+                <!-- Rendered dynamically by JavaScript -->
+            </div>
+        </div>
+
+        <!-- Selected Location Details & Google Maps Embed -->
+        <div class="glass-card d-none" id="place-detail-panel">
+            <div class="d-flex justify-content-between align-items-center mb-2 border-bottom pb-2">
+                <h6 class="fw-bold m-0" id="detail-title">Location Details</h6>
+                <button class="btn btn-sm btn-link text-muted p-0" id="btn-close-detail" type="button"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <p class="small text-secondary mb-2" id="detail-notes"></p>
+            <div class="ratio ratio-16x9 rounded-3 overflow-hidden border">
+                <iframe id="detail-map-iframe" src="" style="border:0;" allowfullscreen="" loading="lazy"></iframe>
+            </div>
+            <div class="mt-2 text-end">
+                <a href="" id="detail-gm-link" target="_blank" class="small text-decoration-none fw-bold text-teal"><i class="fa-solid fa-arrow-up-right-from-square me-1"></i>Open in Google Maps</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal definition for Adding Places -->
+<div class="modal fade" id="addPlaceModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content glass-card border-0 p-2">
+            <form method="POST" action="{{ url_for('trip_places_add', trip_id=trip.id) }}">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold">Plot Location Marker</h5>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info py-2 px-3 rounded-3 mb-3 small d-none" id="draggable-marker-hint">
+                        <i class="fa-solid fa-circle-info me-1"></i> A violet marker was placed on the map. Drag it to dynamically update coordinates below!
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Location Name</label>
+                        <input type="text" name="name" id="add-place-name" class="form-control rounded-3" placeholder="e.g. Eiffel Tower" required>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-6 mb-3">
+                            <label class="form-label small fw-bold">Latitude (-90 to 90)</label>
+                            <input type="number" step="0.000001" name="lat" id="add-place-lat" class="form-control rounded-3" placeholder="e.g. 48.8584" required>
+                        </div>
+                        <div class="col-6 mb-3">
+                            <label class="form-label small fw-bold">Longitude (-180 to 180)</label>
+                            <input type="number" step="0.000001" name="lng" id="add-place-lng" class="form-control rounded-3" placeholder="e.g. 2.2945" required>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Category</label>
+                        <select name="category" id="add-place-category" class="form-select rounded-3">
+                            <option value="Sightseeing">Sightseeing</option>
+                            <option value="Dining">Dining</option>
+                            <option value="Lodging">Lodging</option>
+                            <option value="Transit">Transit</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Contact Info (Optional)</label>
+                        <input type="text" name="contact" id="add-place-contact" class="form-control rounded-3" placeholder="e.g. Phone number, hotel desk">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Local Notes</label>
+                        <textarea name="notes" id="add-place-notes" class="form-control rounded-3" rows="2" placeholder="e.g. Nearest subway exit, entry code..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 pt-0">
+                    <button class="btn btn-premium rounded-pill px-4" type="submit">Add Marker</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Safe JSON data block from Jinja (Keeps script block clean and linter friendly) -->
+<script id="places-data" type="application/json">
+    [
+        {% for place in trip.places %}
+        {
+            "id": {{ place.id }},
+            "name": {{ place.name | tojson }},
+            "lat": {{ place.lat or 0.0 }},
+            "lng": {{ place.lng or 0.0 }},
+            "category": {{ place.category | tojson }},
+            "notes": {{ (place.notes or '') | tojson }},
+            "contact": {{ (place.contact or '') | tojson }}
+        }{% if not loop.last %},{% endif %}
+        {% endfor %}
+    ]
+</script>
+
+<script>
+    // Load places coordinates into Javascript array from JSON script block
+    const placesDataEl = document.getElementById('places-data');
+    let rawPlaces = placesDataEl ? JSON.parse(placesDataEl.textContent.trim() || '[]') : [];
+    // Inject loop indices for selection and highlighting
+    const places = rawPlaces.map((p, idx) => ({ ...p, index: idx }));
+
+    // Global Interactive Map State variables
+    let mapMode = 'offline'; 
+    let leafletMap = null;
+    let leafletMarkers = [];
+    let leafletPath = null;
+    let streetLayer = null;
+    let satelliteLayer = null;
+    let labelsLayer = null;
+    let darkRoadmapLayer = null;
+
+    let searchCenter = null;       // Current focus coordinates (object {lat, lng})
+    let radiusCircle = null;       // Circular radius visualization on map
+    let userLocationMarker = null; // pulsating GPS position marker
+    let watchId = null;            // watchPosition ID
+    let draggableMarker = null;    // modal interactive coordinates pin
+    let searchMarker = null;       // temporary geocoded pin
+
+    let searchHistory = JSON.parse(localStorage.getItem('tripMapSearchHistory') || '[]');
+
+    // Canvas drawing function for Offline Vector Map
+    function drawVectorMap(activePlacesList = places) {
+        const canvas = document.getElementById('vectorMapCanvas');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        
+        const width = canvas.width;
+        const height = canvas.height;
+        
+        // Clear canvas
+        ctx.clearRect(0, 0, width, height);
+        
+        // Draw coordinate grid lines
+        ctx.strokeStyle = document.body.classList.contains('dark-mode') ? '#334155' : '#edf2f7';
+        ctx.lineWidth = 1;
+        
+        for (let x = 30; x < width; x += 40) {
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, height);
+            ctx.stroke();
+        }
+        for (let y = 30; y < height; y += 40) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(width, y);
+            ctx.stroke();
+        }
+        
+        if (activePlacesList.length === 0) {
+            ctx.fillStyle = '#718096';
+            ctx.font = '14px Inter, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('No coordinates match your active filters.', width / 2, height / 2);
+            return;
+        }
+        
+        // Normalize coordinates to fit canvas dimensions
+        let minLat = Math.min(...activePlacesList.map(p => p.lat));
+        let maxLat = Math.max(...activePlacesList.map(p => p.lat));
+        let minLng = Math.min(...activePlacesList.map(p => p.lng));
+        let maxLng = Math.max(...activePlacesList.map(p => p.lng));
+        
+        // Guard division by zero for single plots
+        let latDiff = (maxLat - minLat) || 1;
+        let lngDiff = (maxLng - minLng) || 1;
+        
+        // Map points coordinates inside safe padding limits
+        const padding = 50;
+        const points = activePlacesList.map(p => {
+            let x = padding + ((p.lng - minLng) / lngDiff) * (width - 2 * padding);
+            // Flip y because canvas coordinate starts from top left
+            let y = height - (padding + ((p.lat - minLat) / latDiff) * (height - 2 * padding));
+            return { x, y, name: p.name, category: p.category };
+        });
+        
+        // Draw route lines connecting points sequentially
+        ctx.strokeStyle = '#4f46e5';
+        ctx.lineWidth = 2.5;
+        ctx.setLineDash([6, 4]); // dashed travel routes lines
+        ctx.beginPath();
+        points.forEach((p, idx) => {
+            if (idx === 0) ctx.moveTo(p.x, p.y);
+            else ctx.lineTo(p.x, p.y);
+        });
+        ctx.stroke();
+        ctx.setLineDash([]); // Reset dash
+        
+        // Plot point dots
+        points.forEach(p => {
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 7, 0, 2 * Math.PI);
+            
+            // color dots by category
+            if (p.category === 'Dining') ctx.fillStyle = '#ec4899';
+            else if (p.category === 'Lodging') ctx.fillStyle = '#f59e0b';
+            else if (p.category === 'Transit') ctx.fillStyle = '#3b82f6';
+            else ctx.fillStyle = '#0d9488'; // Sightseeing
+            
+            ctx.fill();
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+            
+            // Draw labels
+            ctx.fillStyle = document.body.classList.contains('dark-mode') ? '#f1f5f9' : '#2d3748';
+            ctx.font = 'bold 9px Inter, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(p.name, p.x, p.y - 12);
+        });
+    }
+
+    function toggleMapMode(mode) {
+        mapMode = mode;
+        const canvas = document.getElementById('vectorMapCanvas');
+        const gMapContainer = document.getElementById('googleMapContainer');
+        const btnOffline = document.getElementById('btn-offline');
+        const btnOnline = document.getElementById('btn-online');
+        const btnRedraw = document.getElementById('btn-redraw');
+        const mapTypeGroup = document.getElementById('map-type-group');
+        const titleLabel = document.getElementById('map-title-label');
+        const descLabel = document.getElementById('map-desc-label');
+        
+        if (mode === 'offline') {
+            canvas.style.display = 'block';
+            gMapContainer.style.display = 'none';
+            btnOffline.classList.add('active');
+            btnOnline.classList.remove('active');
+            btnRedraw.style.display = 'block';
+            mapTypeGroup.style.display = 'none';
+            titleLabel.innerText = 'Offline Interactive Coordinate Map Grid';
+            descLabel.innerText = 'Vector lines display travel route connections dynamically between plotted coordinates.';
+            
+            // Stop GPS tracking when exiting online mode
+            if (watchId !== null) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+                const gpsBtn = document.getElementById('btn-gps-locate');
+                if (gpsBtn) gpsBtn.classList.remove('active');
+            }
+            applyFiltersAndUpdates();
+        } else {
+            canvas.style.display = 'none';
+            gMapContainer.style.display = 'block';
+            btnOffline.classList.remove('active');
+            btnOnline.classList.add('active');
+            btnRedraw.style.display = 'none';
+            mapTypeGroup.style.display = 'inline-flex';
+            titleLabel.innerText = 'Online Map View';
+            descLabel.innerText = 'Watermark-free interactive satellite and street maps plotting coordinates and sequential travel route.';
+            loadOnlineMap();
+        }
+    }
+
+    function loadOnlineMap() {
+        if (!leafletMap) {
+            initLeafletMap();
+        } else {
+            applyFiltersAndUpdates();
+        }
+    }
+
+    function initLeafletMap() {
+        const container = document.getElementById('googleMapContainer');
+        if (!container) return;
+        
+        // Base Layer Setup with high-DPI (Retina) detection
+        streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            detectRetina: true,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        });
+
+        darkRoadmapLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            maxZoom: 20,
+            detectRetina: true,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+        });
+        
+        satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            maxZoom: 20,
+            maxNativeZoom: 19,
+            detectRetina: true,
+            attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+        });
+        
+        labelsLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+            maxZoom: 20,
+            maxNativeZoom: 19,
+            detectRetina: true,
+            attribution: 'Labels &copy; Esri'
+        });
+
+        // Resolve active center
+        let initialCenter = [0, 0];
+        let initialZoom = 2;
+
+        if (searchCenter) {
+            initialCenter = [searchCenter.lat, searchCenter.lng];
+            initialZoom = 14;
+        } else if (places.length > 0) {
+            let totalLat = 0, totalLng = 0;
+            places.forEach(p => {
+                totalLat += p.lat;
+                totalLng += p.lng;
+            });
+            initialCenter = [totalLat / places.length, totalLng / places.length];
+            initialZoom = 12;
+        }
+        
+        leafletMap = L.map('googleMapContainer', {
+            zoomControl: true
+        }).setView(initialCenter, initialZoom);
+        
+        // Scale indicator
+        L.control.scale({ imperial: false }).addTo(leafletMap);
+
+        // Auto-select correct map theme style
+        const isDarkMode = document.body.classList.contains('dark-mode');
+        if (isDarkMode) {
+            darkRoadmapLayer.addTo(leafletMap);
+            document.getElementById('btn-roadmap').classList.add('active');
+            document.getElementById('btn-satellite').classList.remove('active');
+        } else {
+            streetLayer.addTo(leafletMap);
+        }
+
+        // Reverse Geocoding Click Handler
+        leafletMap.on('click', (e) => {
+            // Ignore click if user clicked a marker
+            if (e.originalEvent.target.closest('.leaflet-marker-icon')) return;
+            
+            const lat = e.latlng.lat;
+            const lng = e.latlng.lng;
+            
+            fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1&accept-language=en`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data && data.display_name) {
+                        const address = data.address;
+                        const name = address.road || address.suburb || address.village || address.neighbourhood || address.city || "Selected Coordinate";
+                        const displayShort = data.display_name.split(',').slice(0, 4).join(', ');
+                        
+                        const popupHTML = `
+                            <div style="color: #0f172a; font-family: 'Inter', sans-serif; padding: 2px; max-width: 240px; font-size: 0.8rem;">
+                                <strong style="display: block; font-size: 0.85rem; margin-bottom: 4px; color: var(--primary);"><i class="fa-solid fa-map-pin me-1"></i>Map Coordinate</strong>
+                                <p style="margin: 0 0 6px 0; font-size: 0.75rem; line-height: 1.3;">${displayShort}</p>
+                                <small style="display: block; color: #64748b; margin-bottom: 8px;">Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}</small>
+                                <button class="btn btn-premium btn-xs w-100 py-1" style="font-size: 0.7rem; border-radius: 6px;" id="btn-popup-add-stop">
+                                    <i class="fa-solid fa-plus me-1"></i>Add Stop Here
+                                </button>
+                            </div>
+                        `;
+                        
+                        L.popup()
+                            .setLatLng(e.latlng)
+                            .setContent(popupHTML)
+                            .openOn(leafletMap);
+                    }
+                })
+                .catch(err => console.error("Reverse geocoding error:", err));
+        });
+
+        // Popup open listener to bind click handlers dynamically
+        leafletMap.on('popupopen', (e) => {
+            const btn = document.getElementById('btn-popup-add-stop');
+            if (btn) {
+                btn.onclick = () => {
+                    const latlng = e.popup.getLatLng();
+                    const contentEl = e.popup.getElement();
+                    let placeName = "Custom Stop";
+                    const addressP = contentEl.querySelector('p');
+                    if (addressP) {
+                        placeName = addressP.innerText.split(',')[0].trim();
+                    }
+                    
+                    document.getElementById('add-place-name').value = placeName;
+                    document.getElementById('add-place-lat').value = latlng.lat.toFixed(6);
+                    document.getElementById('add-place-lng').value = latlng.lng.toFixed(6);
+                    
+                    leafletMap.closePopup();
+                    openAddPlaceModal();
+                };
+            }
+        });
+
+        // Lazy load markers on viewport changes
+        leafletMap.on('moveend', () => {
+            lazyLoadMarkers();
+        });
+
+        // Apply filters to populate data
+        applyFiltersAndUpdates();
+
+        // Check for share queries
+        handleShareQueryParams();
+    }
+
+    function changeMapType(type) {
+        const btnRoadmap = document.getElementById('btn-roadmap');
+        const btnSatellite = document.getElementById('btn-satellite');
+        const isDarkMode = document.body.classList.contains('dark-mode');
+        
+        if (!leafletMap) return;
+        
+        if (type === 'roadmap') {
+            btnRoadmap.classList.add('active');
+            btnSatellite.classList.remove('active');
+            
+            if (leafletMap.hasLayer(satelliteLayer)) leafletMap.removeLayer(satelliteLayer);
+            if (leafletMap.hasLayer(labelsLayer)) leafletMap.removeLayer(labelsLayer);
+            
+            if (isDarkMode) {
+                darkRoadmapLayer.addTo(leafletMap);
+            } else {
+                streetLayer.addTo(leafletMap);
+            }
+        } else {
+            btnRoadmap.classList.remove('active');
+            btnSatellite.classList.add('active');
+            
+            if (leafletMap.hasLayer(streetLayer)) leafletMap.removeLayer(streetLayer);
+            if (leafletMap.hasLayer(darkRoadmapLayer)) leafletMap.removeLayer(darkRoadmapLayer);
+            
+            satelliteLayer.addTo(leafletMap);
+            labelsLayer.addTo(leafletMap);
+        }
+    }
+
+    // Place selection and iframe dynamic loading logic
+    function selectPlace(idx, lat, lng) {
+        const cards = document.querySelectorAll('.place-item-card');
+        cards.forEach(c => {
+            c.classList.remove('bg-white', 'shadow-sm');
+            c.style.borderLeftColor = 'transparent';
+        });
+        
+        const activeCard = document.getElementById(`place-card-${idx}`);
+        if (activeCard) {
+            activeCard.style.borderLeftColor = 'var(--primary)';
+            activeCard.classList.add('bg-white', 'shadow-sm');
+            activeCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+        
+        const place = places.find(p => p.index === idx);
+        if (!place) return;
+        
+        const detailPanel = document.getElementById('place-detail-panel');
+        const detailTitle = document.getElementById('detail-title');
+        const detailNotes = document.getElementById('detail-notes');
+        const detailIframe = document.getElementById('detail-map-iframe');
+        const detailGmLink = document.getElementById('detail-gm-link');
+        
+        detailPanel.classList.remove('d-none');
+        detailTitle.innerText = place.name;
+        detailNotes.innerHTML = `
+            <strong>Category:</strong> ${place.category}<br>
+            ${place.notes ? `<strong>Notes:</strong> <i>"${place.notes}"</i><br>` : ''}
+            ${place.contact ? `<strong>Contact:</strong> ${place.contact}<br>` : ''}
+        `;
+        
+        detailIframe.src = `https://maps.google.com/maps?q=${lat},${lng}&t=&z=15&ie=UTF8&iwloc=&output=embed`;
+        detailGmLink.href = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+        
+        if (mapMode === 'online' && leafletMap) {
+            leafletMap.setView([lat, lng], 15);
+            // Search marker matching the selection
+            const foundMarker = leafletMarkers.find(m => m.options.index === idx);
+            if (foundMarker) {
+                foundMarker.openPopup();
+            }
+        }
+    }
+
+    function closePlaceDetail() {
+        const detailPanel = document.getElementById('place-detail-panel');
+        detailPanel.classList.add('d-none');
+        
+        const cards = document.querySelectorAll('.place-item-card');
+        cards.forEach(c => {
+            c.style.borderLeftColor = 'transparent';
+            c.classList.remove('bg-white', 'shadow-sm');
+        });
+    }
+
+    // Advanced Filtering, Radius Proximity, and Sorting
+    function applyFiltersAndUpdates() {
+        const categoryVal = document.getElementById('filter-category').value;
+        const radiusVal = parseFloat(document.getElementById('filter-radius').value || '0');
+        const sortVal = document.getElementById('filter-sort').value;
+        
+        let activePlaces = [...places];
+        
+        // Category Filter
+        if (categoryVal !== 'all') {
+            activePlaces = activePlaces.filter(p => p.category === categoryVal);
+        }
+        
+        // Center determination for calculations
+        let activeCenter = null;
+        if (searchCenter) {
+            activeCenter = L.latLng(searchCenter.lat, searchCenter.lng);
+        } else if (userLocationMarker) {
+            activeCenter = userLocationMarker.getLatLng();
+        }
+
+        // Distance & Proximity filter
+        if (activeCenter) {
+            activePlaces.forEach(p => {
+                p.distance = activeCenter.distanceTo(L.latLng(p.lat, p.lng));
+            });
+            
+            if (radiusVal > 0) {
+                const radiusMeters = radiusVal * 1000;
+                activePlaces = activePlaces.filter(p => p.distance <= radiusMeters);
+            }
+            
+            if (sortVal === 'nearest') {
+                activePlaces.sort((a, b) => a.distance - b.distance);
+            }
+        } else {
+            // Remove previous distance records if center is deleted
+            activePlaces.forEach(p => delete p.distance);
+        }
+
+        // 1. Render Plotted Locations List Column
+        renderPlacesList(activePlaces);
+
+        // 2. Render Map markers & Route Polylines
+        if (mapMode === 'online' && leafletMap) {
+            renderOnlineMapLayers(activePlaces, activeCenter, radiusVal);
+        } else {
+            drawVectorMap(activePlaces);
+        }
+
+        // 3. Render Travel Route Summary Details
+        renderRouteSummary(activePlaces);
+    }
+
+    function renderPlacesList(activePlacesList) {
+        const listContainer = document.getElementById('plotted-locations-list');
+        if (!listContainer) return;
+        
+        listContainer.innerHTML = '';
+        
+        if (activePlacesList.length === 0) {
+            listContainer.innerHTML = `<p class="text-muted text-center py-5"><small>No matching coordinates found.</small></p>`;
+            return;
+        }
+        
+        const categoryColors = {
+            'Dining': '#ec4899',
+            'Lodging': '#f59e0b',
+            'Transit': '#3b82f6',
+            'Sightseeing': '#0d9488'
+        };
+        
+        activePlacesList.forEach((place) => {
+            const color = categoryColors[place.category] || '#0d9488';
+            const distanceText = place.distance !== undefined ? 
+                `<span class="badge bg-light text-secondary mt-1 d-inline-block" style="font-size:0.65rem; border:1px solid rgba(0,0,0,0.06);"><i class="fa-solid fa-location-arrow me-1"></i>${(place.distance / 1000).toFixed(2)} km away</span>` : '';
+            
+            const cardHTML = `
+                <div class="list-group-item border-0 bg-light rounded-4 mb-2 p-3 place-item-card cursor-pointer" 
+                     id="place-card-${place.index}" 
+                     style="border-left: 3px solid transparent !important;"
+                     data-index="${place.index}"
+                     data-lat="${place.lat}"
+                     data-lng="${place.lng}">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div class="pe-2">
+                            <span class="badge mb-1" style="background-color: ${color}; color: white; font-size:0.65rem;">${place.category}</span>
+                            <strong class="d-block text-dark" style="font-size:0.9rem;">${place.name}</strong>
+                            <small class="text-muted d-block" style="font-size:0.75rem;">Lat: ${place.lat.toFixed(5)}, Lng: ${place.lng.toFixed(5)}</small>
+                            ${distanceText}
+                            ${place.contact ? `<small class="text-secondary d-block mt-1" style="font-size:0.7rem;"><i class="fa-solid fa-phone me-1"></i>${place.contact}</small>` : ''}
+                        </div>
+                        <a href="/place/${place.id}/delete" class="btn btn-sm btn-link text-danger p-0 delete-place-btn"><i class="fa-regular fa-trash-can"></i></a>
+                    </div>
+                </div>
+            `;
+            listContainer.insertAdjacentHTML('beforeend', cardHTML);
+        });
+        
+        // Bind dynamic clicks to list items
+        listContainer.querySelectorAll('.place-item-card').forEach(card => {
+            card.addEventListener('click', (e) => {
+                if (e.target.closest('.delete-place-btn')) return;
+                const idx = parseInt(card.getAttribute('data-index'));
+                const lat = parseFloat(card.getAttribute('data-lat'));
+                const lng = parseFloat(card.getAttribute('data-lng'));
+                selectPlace(idx, lat, lng);
+            });
+        });
+    }
+
+    function renderOnlineMapLayers(activePlaces, activeCenter, radiusVal) {
+        // Remove existing items
+        leafletMarkers.forEach(m => leafletMap.removeLayer(m));
+        leafletMarkers = [];
+        
+        if (leafletPath) {
+            leafletMap.removeLayer(leafletPath);
+            leafletPath = null;
+        }
+
+        if (radiusCircle) {
+            leafletMap.removeLayer(radiusCircle);
+            radiusCircle = null;
+        }
+
+        const categoryColors = {
+            'Dining': '#ec4899',
+            'Lodging': '#f59e0b',
+            'Transit': '#3b82f6',
+            'Sightseeing': '#0d9488'
+        };
+
+        const pathCoords = [];
+        
+        // Add markers
+        activePlaces.forEach((p) => {
+            const color = categoryColors[p.category] || '#0d9488';
+            
+            const customIcon = L.divIcon({
+                className: 'custom-leaflet-marker',
+                html: `<div style="background-color: ${color}; width: 14px; height: 14px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 4px rgba(0,0,0,0.4);"></div>`,
+                iconSize: [14, 14],
+                iconAnchor: [7, 7]
+            });
+            
+            const marker = L.marker([p.lat, p.lng], { icon: customIcon });
+            marker.options.index = p.index; // preserve actual index for selections
+            marker.addTo(leafletMap);
+            
+            const popupContent = `
+                <div style="color: #0f172a; font-family: 'Inter', sans-serif; padding: 2px; max-width: 200px;">
+                    <span class="badge" style="background-color: ${color}; color: white; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px;">${p.category}</span>
+                    <h6 style="margin: 6px 0 2px 0; font-weight: bold; font-size: 0.85rem;">${p.name}</h6>
+                    <p style="margin: 0; font-size: 0.75rem; color: #475569;">${p.notes || ''}</p>
+                    ${p.contact ? `<small style="font-size: 0.7rem; color: #64748b; display: block; margin-top: 4px;"><i class="fa-solid fa-phone" style="margin-right: 4px;"></i>${p.contact}</small>` : ''}
+                </div>
+            `;
+            
+            marker.bindPopup(popupContent);
+            marker.on('click', () => {
+                selectPlace(p.index, p.lat, p.lng);
+            });
+            
+            leafletMarkers.push(marker);
+            pathCoords.push([p.lat, p.lng]);
+        });
+
+        // Sequential Polyline path
+        if (pathCoords.length > 1) {
+            leafletPath = L.polyline(pathCoords, {
+                color: '#4f46e5',
+                weight: 3.5,
+                dashArray: '8, 6'
+            }).addTo(leafletMap);
+        }
+
+        // Draw Search Proximity Radius Indicator
+        if (activeCenter && radiusVal > 0) {
+            radiusCircle = L.circle(activeCenter, {
+                radius: radiusVal * 1000,
+                color: 'var(--secondary)',
+                fillColor: 'var(--secondary)',
+                fillOpacity: 0.08,
+                weight: 1.5,
+                dashArray: '4, 4'
+            }).addTo(leafletMap);
+            
+            // Adjust bounds to show the entire circle
+            leafletMap.fitBounds(radiusCircle.getBounds(), { padding: [20, 20] });
+        } else if (pathCoords.length > 1) {
+            // Fit stops bounds
+            const group = new L.featureGroup(leafletMarkers);
+            leafletMap.fitBounds(group.getBounds().pad(0.1));
+        } else if (pathCoords.length === 1) {
+            leafletMap.setView(pathCoords[0], 14);
+        }
+
+        // Run boundary lazy load
+        lazyLoadMarkers();
+    }
+
+    function lazyLoadMarkers() {
+        if (mapMode !== 'online' || !leafletMap) return;
+        const bounds = leafletMap.getBounds();
+        
+        leafletMarkers.forEach(m => {
+            if (bounds.contains(m.getLatLng())) {
+                if (!leafletMap.hasLayer(m)) leafletMap.addLayer(m);
+            } else {
+                if (leafletMap.hasLayer(m)) leafletMap.removeLayer(m);
+            }
+        });
+    }
+
+    function renderRouteSummary(activePlacesList) {
+        const summaryPanel = document.getElementById('route-summary-panel');
+        const stopsCountEl = document.getElementById('route-stops-count');
+        const totalDistanceEl = document.getElementById('route-total-distance');
+        const driveTimeEl = document.getElementById('route-drive-time');
+        const walkTimeEl = document.getElementById('route-walk-time');
+
+        if (!summaryPanel) return;
+
+        if (activePlacesList.length < 2) {
+            summaryPanel.classList.add('d-none');
+            return;
+        }
+
+        let totalMeters = 0;
+        for (let i = 0; i < activePlacesList.length - 1; i++) {
+            const p1 = L.latLng(activePlacesList[i].lat, activePlacesList[i].lng);
+            const p2 = L.latLng(activePlacesList[i + 1].lat, activePlacesList[i + 1].lng);
+            totalMeters += p1.distanceTo(p2);
+        }
+
+        const totalKm = totalMeters / 1000;
+        
+        // Estimated times: driving at 50 km/h, walking at 5 km/h
+        const driveMinutes = (totalKm / 50) * 60;
+        const walkMinutes = (totalKm / 5) * 60;
+
+        stopsCountEl.innerText = activePlacesList.length;
+        totalDistanceEl.innerText = `${totalKm.toFixed(2)} km`;
+        driveTimeEl.innerText = formatTimeDuration(driveMinutes);
+        walkTimeEl.innerText = formatTimeDuration(walkMinutes);
+
+        summaryPanel.classList.remove('d-none');
+    }
+
+    function formatTimeDuration(totalMinutes) {
+        if (totalMinutes < 60) {
+            return `${Math.round(totalMinutes)}m`;
+        }
+        const hours = Math.floor(totalMinutes / 60);
+        const minutes = Math.round(totalMinutes % 60);
+        return `${hours}h ${minutes}m`;
+    }
+
+    // Geocoding and Place Search Integration
+    function searchMapLocation() {
+        const rawQuery = document.getElementById('map-search-input').value.trim();
+        if (!rawQuery) {
+            triggerToast("Search Warning", "Please enter a location query.");
+            return;
+        }
+
+        // Add to search history
+        saveSearchToHistory(rawQuery);
+        
+        const queryClean = rawQuery.replace(/\s+/g, ' ');
+        const queriesToTry = [
+            queryClean,
+            queryClean.split(' ').join(', '),
+            queryClean.split(' ').slice(0, 2).join(', '),
+            queryClean.split(' ')[0]
+        ];
+        
+        attemptGeocode(queriesToTry, 0);
+    }
+
+    function attemptGeocode(queries, index) {
+        if (index >= queries.length) {
+            triggerToast("Search Failed", "Could not find coordinates. Try adding city, state or postcode details.");
+            return;
+        }
+        
+        const currentQuery = queries[index];
+        triggerToast("Searching...", `Searching geocoding indices for "${currentQuery}"`);
+        
+        fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(currentQuery)}&limit=1&accept-language=en`)
+            .then(r => r.json())
+            .then(data => {
+                if (data && data.length > 0) {
+                    const match = data[0];
+                    const lat = parseFloat(match.lat);
+                    const lng = parseFloat(match.lon);
+                    const name = match.display_name.split(',')[0];
+                    
+                    triggerToast("Location Found!", `Centering map on: ${name}`);
+                    
+                    // Set search center
+                    searchCenter = { lat, lng };
+                    
+                    // Pre-fill Add Marker form modal
+                    document.getElementById('add-place-name').value = name;
+                    document.getElementById('add-place-lat').value = lat.toFixed(6);
+                    document.getElementById('add-place-lng').value = lng.toFixed(6);
+                    
+                    if (mapMode === 'online' && leafletMap) {
+                        leafletMap.setView([lat, lng], 15);
+                        
+                        // Clear previous search marker
+                        if (searchMarker) {
+                            leafletMap.removeLayer(searchMarker);
+                        }
+                        
+                        const searchIcon = L.divIcon({
+                            className: 'search-leaflet-marker',
+                            html: `<div style="background-color: #f43f5e; width: 16px; height: 16px; border-radius: 50%; border: 2.5px solid white; box-shadow: 0 0 6px rgba(244,63,94,0.6);"></div>`,
+                            iconSize: [16, 16],
+                            iconAnchor: [8, 8]
+                        });
+                        
+                        searchMarker = L.marker([lat, lng], { icon: searchIcon }).addTo(leafletMap);
+                        
+                        const popupText = `
+                            <div style="color:#0f172a; padding:2px; font-family: 'Inter', sans-serif;">
+                                <strong style="display:block; font-size:0.85rem;">${name}</strong>
+                                <small style="color:#64748b; display:block; margin-bottom: 6px;">Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}</small>
+                                <button class="btn btn-premium btn-xs py-1 w-100 text-white" style="font-size:0.65rem; border-radius:6px;" id="btn-popup-save-marker">Save as Trip Stop</button>
+                            </div>
+                        `;
+                        
+                        searchMarker.bindPopup(popupText).openPopup();
+                        
+                        // Bind save marker trigger
+                        leafletMap.on('popupopen', () => {
+                            const btnSave = document.getElementById('btn-popup-save-marker');
+                            if (btnSave) {
+                                btnSave.onclick = () => {
+                                    openAddPlaceModal();
+                                };
+                            }
+                        });
+                    } else {
+                        // Offline grid mode opens add dialog
+                        openAddPlaceModal();
+                    }
+
+                    // Recalculate filters using new searchCenter
+                    applyFiltersAndUpdates();
+                } else {
+                    // Try next fallback geocoding search
+                    attemptGeocode(queries, index + 1);
+                }
+            })
+            .catch(err => {
+                console.error("Geocoding query exception: " + currentQuery, err);
+                attemptGeocode(queries, index + 1);
+            });
+    }
+
+    // Voice Search Speech Recognition integration
+    function toggleVoiceSearch() {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            triggerToast("Voice Search", "Web Speech recognition is not supported in this browser.");
+            return;
+        }
+
+        const micBtn = document.getElementById('voice-search-btn');
+        if (micBtn.classList.contains('recording')) {
+            // Already active, let it stop
+            return;
+        }
+
+        const recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = 'en-US';
+
+        recognition.onstart = () => {
+            micBtn.classList.add('recording');
+            triggerToast("Voice Listening...", "Speak the location name or address coordinates clearly.");
+        };
+
+        recognition.onresult = (event) => {
+            const transcript = event.results[0][0].transcript;
+            document.getElementById('map-search-input').value = transcript;
+            triggerToast("Voice Received", `Searching for: "${transcript}"`);
+            searchMapLocation();
+        };
+
+        recognition.onerror = (event) => {
+            console.error("Speech recognition error", event.error);
+            triggerToast("Speech Error", "Could not transcribe speech. Please try searching manually.");
+            micBtn.classList.remove('recording');
+        };
+
+        recognition.onend = () => {
+            micBtn.classList.remove('recording');
+        };
+
+        recognition.start();
+    }
+
+    // Autocomplete Auto-Suggestions UI
+    let suggestionsDebounce = null;
+    function handleSearchInput() {
+        clearTimeout(suggestionsDebounce);
+        const query = document.getElementById('map-search-input').value.trim();
+        const suggestionsBox = document.getElementById('search-suggestions');
+        
+        if (query.length < 3) {
+            showRecentHistory();
+            return;
+        }
+
+        suggestionsDebounce = setTimeout(() => {
+            fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&accept-language=en`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data && data.length > 0) {
+                        const items = data.map(item => ({
+                            title: item.display_name.split(',')[0].trim(),
+                            subtitle: item.display_name.split(',').slice(1).join(',').trim(),
+                            isHistory: false
+                        }));
+                        renderSuggestions(items);
+                    } else {
+                        suggestionsBox.innerHTML = '<div class="text-muted text-center py-2 small">No suggestions found</div>';
+                        suggestionsBox.style.display = 'block';
+                    }
+                })
+                .catch(err => console.error("Autocomplete fetch error", err));
+        }, 300);
+    }
+
+    function showRecentHistory() {
+        const inputVal = document.getElementById('map-search-input').value.trim();
+        const suggestionsBox = document.getElementById('search-suggestions');
+
+        if (inputVal.length > 0) return; // Only show history on empty focused input
+
+        if (searchHistory.length === 0) {
+            suggestionsBox.style.display = 'none';
+            return;
+        }
+
+        const items = searchHistory.map(q => ({
+            title: q,
+            subtitle: "Recent Search Query",
+            isHistory: true
+        }));
+
+        renderSuggestions(items);
+    }
+
+    function renderSuggestions(items) {
+        const suggestionsBox = document.getElementById('search-suggestions');
+        suggestionsBox.innerHTML = '';
+
+        items.forEach(item => {
+            const icon = item.isHistory ? 'fa-clock-rotate-left text-muted' : 'fa-location-dot text-primary';
+            const badge = item.isHistory ? '<span class="suggestion-history-badge">History</span>' : '';
+            
+            const html = `
+                <div class="suggestion-item">
+                    <i class="fa-solid ${icon} suggestion-icon"></i>
+                    <div class="suggestion-content">
+                        <span class="suggestion-title">${item.title}</span>
+                        <span class="suggestion-subtitle">${item.subtitle}</span>
+                    </div>
+                    ${badge}
+                </div>
+            `;
+            
+            suggestionsBox.insertAdjacentHTML('beforeend', html);
+        });
+
+        // Add selection clicks
+        const elements = suggestionsBox.querySelectorAll('.suggestion-item');
+        elements.forEach((el, index) => {
+            el.onclick = () => {
+                const target = items[index];
+                document.getElementById('map-search-input').value = target.title;
+                suggestionsBox.style.display = 'none';
+                searchMapLocation();
+            };
+        });
+
+        suggestionsBox.style.display = 'block';
+    }
+
+    function saveSearchToHistory(query) {
+        // filter duplicates
+        searchHistory = searchHistory.filter(q => q.toLowerCase() !== query.toLowerCase());
+        searchHistory.unshift(query);
+        // Cap to 5 recent queries
+        if (searchHistory.length > 5) {
+            searchHistory.pop();
+        }
+        localStorage.setItem('tripMapSearchHistory', JSON.stringify(searchHistory));
+    }
+
+    // GPS high-accuracy location watch toggles
+    function toggleGPSLocate() {
+        const gpsBtn = document.getElementById('btn-gps-locate');
+        
+        if (watchId !== null) {
+            navigator.geolocation.clearWatch(watchId);
+            watchId = null;
+            gpsBtn.classList.remove('active');
+            if (userLocationMarker) {
+                leafletMap.removeLayer(userLocationMarker);
+                userLocationMarker = null;
+            }
+            searchCenter = null;
+            applyFiltersAndUpdates();
+            triggerToast("GPS Disabled", "Location tracking stopped.");
+            return;
+        }
+
+        if (!navigator.geolocation) {
+            triggerToast("GPS Unsupported", "Geolocation tracking not supported by this browser.");
+            return;
+        }
+
+        gpsBtn.classList.add('active');
+        triggerToast("Acquiring GPS...", "Obtaining high-accuracy location coordinates...");
+
+        watchId = navigator.geolocation.watchPosition(
+            (pos) => {
+                const lat = pos.coords.latitude;
+                const lng = pos.coords.longitude;
+                const userLatLng = [lat, lng];
+
+                if (!userLocationMarker) {
+                    const pulseIcon = L.divIcon({
+                        className: 'user-location-marker',
+                        html: '<div class="user-pulse-dot"></div><div class="user-pulse-ring"></div>',
+                        iconSize: [28, 28],
+                        iconAnchor: [14, 14]
+                    });
+                    userLocationMarker = L.marker(userLatLng, { icon: pulseIcon }).addTo(leafletMap);
+                    leafletMap.setView(userLatLng, 15);
+                } else {
+                    userLocationMarker.setLatLng(userLatLng);
+                }
+
+                // Update search center coordinate anchor
+                searchCenter = { lat, lng };
+                
+                // Refresh filters and calculate distances
+                applyFiltersAndUpdates();
+            },
+            (err) => {
+                console.error("GPS Watch failed", err);
+                triggerToast("GPS Error", "Failed to retrieve location coordinates. Please verify browser permissions.");
+                gpsBtn.classList.remove('active');
+                if (watchId !== null) {
+                    navigator.geolocation.clearWatch(watchId);
+                    watchId = null;
+                }
+            },
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+        );
+    }
+
+    // HTML5 Fullscreen toggle
+    function toggleFullscreen() {
+        const mapContainer = document.getElementById('googleMapContainer');
+        const fsBtn = document.getElementById('btn-fullscreen-toggle');
+        const icon = fsBtn.querySelector('i');
+
+        if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+            // Enter fullscreen
+            if (mapContainer.requestFullscreen) {
+                mapContainer.requestFullscreen();
+            } else if (mapContainer.webkitRequestFullscreen) {
+                mapContainer.webkitRequestFullscreen();
+            }
+            icon.classList.remove('fa-expand');
+            icon.classList.add('fa-compress');
+        } else {
+            // Exit fullscreen
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+            } else if (document.webkitExitFullscreen) {
+                document.webkitExitFullscreen();
+            }
+            icon.classList.remove('fa-compress');
+            icon.classList.add('fa-expand');
+        }
+    }
+
+    // Share Location URL parameters
+    function handleShareQueryParams() {
+        const params = new URLSearchParams(window.location.search);
+        const lat = parseFloat(params.get('lat'));
+        const lng = parseFloat(params.get('lng'));
+        const name = params.get('name') || 'Shared Location';
+
+        if (!isNaN(lat) && !isNaN(lng)) {
+            // Auto switch to online map
+            if (mapMode === 'offline') {
+                toggleMapMode('online');
+            }
+            
+            searchCenter = { lat, lng };
+            leafletMap.setView([lat, lng], 15);
+            
+            // Render shared pin
+            const shareIcon = L.divIcon({
+                className: 'search-leaflet-marker',
+                html: `<div style="background-color: #818cf8; width: 16px; height: 16px; border-radius: 50%; border: 2.5px solid white; box-shadow: 0 0 6px rgba(129,140,248,0.7);"></div>`,
+                iconSize: [16, 16],
+                iconAnchor: [8, 8]
+            });
+            
+            if (searchMarker) {
+                leafletMap.removeLayer(searchMarker);
+            }
+            
+            searchMarker = L.marker([lat, lng], { icon: shareIcon }).addTo(leafletMap);
+            
+            const popupHTML = `
+                <div style="color: #0f172a; padding: 2px; font-family: 'Inter', sans-serif;">
+                    <strong style="display: block; font-size: 0.85rem; color: var(--primary);"><i class="fa-solid fa-share-nodes me-1"></i>Shared Pin</strong>
+                    <strong style="display: block; font-size: 0.8rem; margin: 4px 0 2px 0;">${name}</strong>
+                    <small style="color: #64748b; display: block; margin-bottom: 6px;">Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}</small>
+                    <button class="btn btn-premium btn-xs py-1 w-100 text-white" style="font-size: 0.65rem; border-radius: 6px;" id="btn-popup-save-shared">Save as Trip Stop</button>
+                </div>
+            `;
+            
+            searchMarker.bindPopup(popupHTML).openPopup();
+
+            // Set inputs ready to save
+            document.getElementById('add-place-name').value = name;
+            document.getElementById('add-place-lat').value = lat.toFixed(6);
+            document.getElementById('add-place-lng').value = lng.toFixed(6);
+
+            leafletMap.on('popupopen', () => {
+                const btnSave = document.getElementById('btn-popup-save-shared');
+                if (btnSave) {
+                    btnSave.onclick = () => {
+                        openAddPlaceModal();
+                    };
+                }
+            });
+
+            applyFiltersAndUpdates();
+        }
+    }
+
+    // Open/Close modal helper triggers
+    window.openAddPlaceModal = function() {
+        const modalEl = document.getElementById('addPlaceModal');
+        const modal = new bootstrap.Modal(modalEl);
+        modal.show();
+    };
+
+    // Bind event listeners dynamically to elements on DOMContentLoaded
+    document.addEventListener('DOMContentLoaded', () => {
+        // Form & Button triggers
+        document.getElementById('btn-open-add-modal').addEventListener('click', openAddPlaceModal);
+        document.getElementById('btn-close-detail').addEventListener('click', closePlaceDetail);
+        
+        document.getElementById('map-search-submit').addEventListener('click', searchMapLocation);
+        document.getElementById('map-search-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') searchMapLocation();
+        });
+
+        // Search inputs listeners for autocomplete
+        document.getElementById('map-search-input').addEventListener('input', handleSearchInput);
+        document.getElementById('map-search-input').addEventListener('focus', showRecentHistory);
+        
+        // Hide autocomplete on clicking outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('#map-search-input') && !e.target.closest('#search-suggestions')) {
+                document.getElementById('search-suggestions').style.display = 'none';
+            }
+        });
+
+        // Voice search button
+        document.getElementById('voice-search-btn').addEventListener('click', toggleVoiceSearch);
+
+        // Map mode and redraw buttons
+        document.getElementById('btn-offline').addEventListener('click', () => toggleMapMode('offline'));
+        document.getElementById('btn-online').addEventListener('click', () => toggleMapMode('online'));
+        document.getElementById('btn-redraw').addEventListener('click', () => drawVectorMap());
+
+        // Roadmap & Satellite layer toggles
+        document.getElementById('btn-roadmap').addEventListener('click', () => changeMapType('roadmap'));
+        document.getElementById('btn-satellite').addEventListener('click', () => changeMapType('satellite'));
+
+        // GPS Locate & Fullscreen toggles
+        document.getElementById('btn-gps-locate').addEventListener('click', toggleGPSLocate);
+        document.getElementById('btn-fullscreen-toggle').addEventListener('click', toggleFullscreen);
+
+        // Collapsible Advanced Filters panel
+        document.getElementById('btn-filters-toggle').addEventListener('click', () => {
+            const collapseEl = document.getElementById('filtersCollapse');
+            const collapse = bootstrap.Collapse.getOrCreateInstance(collapseEl);
+            collapse.toggle();
+        });
+
+        // Filter selectors change
+        document.getElementById('filter-category').addEventListener('change', applyFiltersAndUpdates);
+        document.getElementById('filter-radius').addEventListener('change', applyFiltersAndUpdates);
+        document.getElementById('filter-sort').addEventListener('change', applyFiltersAndUpdates);
+
+        // Fullscreen change listener to sync icons
+        document.addEventListener('fullscreenchange', () => {
+            const fsBtn = document.getElementById('btn-fullscreen-toggle');
+            const icon = fsBtn.querySelector('i');
+            if (document.fullscreenElement) {
+                icon.classList.remove('fa-expand');
+                icon.classList.add('fa-compress');
+            } else {
+                icon.classList.remove('fa-compress');
+                icon.classList.add('fa-expand');
+            }
+        });
+
+        // --- Draggable coordinates manual marker within Modal ---
+        const addPlaceModalEl = document.getElementById('addPlaceModal');
+        const hintEl = document.getElementById('draggable-marker-hint');
+
+        addPlaceModalEl.addEventListener('shown.bs.modal', () => {
+            if (mapMode === 'online' && leafletMap) {
+                hintEl.classList.remove('d-none');
+                const center = leafletMap.getCenter();
+                
+                const dragIcon = L.divIcon({
+                    className: 'draggable-modal-marker',
+                    html: `<div style="background-color: #a855f7; width: 16px; height: 16px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 8px rgba(168,85,247,0.7);"></div>`,
+                    iconSize: [16, 16],
+                    iconAnchor: [8, 8]
+                });
+                
+                draggableMarker = L.marker(center, {
+                    draggable: true,
+                    icon: dragIcon
+                }).addTo(leafletMap);
+                
+                draggableMarker.bindPopup(`
+                    <div style="font-size: 0.75rem; text-align: center; color: #0f172a; font-family: 'Inter', sans-serif;">
+                        <strong>Placement Pin</strong><br>Drag me on the map to set location!
+                    </div>
+                `).openPopup();
+                
+                // Initialize form values
+                document.getElementById('add-place-lat').value = center.lat.toFixed(6);
+                document.getElementById('add-place-lng').value = center.lng.toFixed(6);
+                
+                draggableMarker.on('drag', () => {
+                    const pos = draggableMarker.getLatLng();
+                    document.getElementById('add-place-lat').value = pos.lat.toFixed(6);
+                    document.getElementById('add-place-lng').value = pos.lng.toFixed(6);
+                });
+            } else {
+                hintEl.classList.add('d-none');
+            }
+        });
+
+        addPlaceModalEl.addEventListener('hidden.bs.modal', () => {
+            if (draggableMarker) {
+                leafletMap.removeLayer(draggableMarker);
+                draggableMarker = null;
+            }
+        });
+
+        // Trigger initial canvas load
+        drawVectorMap();
+    });
+
+    window.addEventListener('load', () => {
+        // Set initial view state
+        applyFiltersAndUpdates();
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,739 @@
+{% extends "base.html" %}
+{% block content %}
+<!-- Trip Header Card -->
+<div class="glass-card mb-4">
+    <div class="row align-items-start g-3">
+        <div class="col-md-7">
+            <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
+                <span class="badge bg-primary px-3 py-1">{{ trip.style or 'Solo' }}</span>
+                {% if trip.is_public %}
+                    <span class="badge bg-success px-3 py-1">Public Trip</span>
+                {% else %}
+                    <span class="badge bg-secondary px-3 py-1">Private Trip</span>
+                {% endif %}
+                <span class="badge bg-warning text-dark px-3 py-1">
+                    <i class="fa-solid fa-star me-1"></i>{{ "%.1f"|format(avg_rating) }} ({{ ratings_count }} reviews)
+                </span>
+            </div>
+            
+            <h2 class="fw-bold mb-1">{{ trip.name }}</h2>
+            <p class="text-muted m-0"><i class="fa-solid fa-location-dot me-2 text-teal"></i>{{ trip.destination }} | {{ trip.start_date }} to {{ trip.end_date }}</p>
+            <p class="text-secondary small mt-2">Planned by @{{ trip.author.username }}</p>
+        </div>
+        
+        <div class="col-md-5 text-md-end d-flex flex-column gap-2 justify-content-end align-items-md-end">
+            <!-- Action Toolbar -->
+            <div class="d-flex gap-2 flex-wrap justify-content-end">
+                <button class="btn btn-light rounded-pill px-3 shadow-sm" onclick="toggleLike({{ trip.id }})">
+                    <i class="{% if user_liked %}fa-solid text-danger{% else %}fa-regular{% endif %} fa-heart me-1" id="like-icon"></i>
+                    <span id="likes-count">{{ trip.likes|length }}</span>
+                </button>
+                <button class="btn btn-light rounded-pill px-3 shadow-sm" onclick="toggleBookmark({{ trip.id }})">
+                    <i class="{% if user_bookmarked %}fa-solid text-warning{% else %}fa-regular{% endif %} fa-bookmark me-1" id="bookmark-icon"></i>
+                    <span>Save</span>
+                </button>
+                {% if trip.author != current_user and current_user.is_authenticated %}
+                <button class="btn btn-light rounded-pill px-3 shadow-sm" onclick="toggleFollow({{ trip.author.id }})">
+                    <i class="fa-solid fa-user-plus me-1"></i>Follow Creator
+                </button>
+                {% endif %}
+                <a href="{{ url_for('copy_trip', trip_id=trip.id) }}" class="btn btn-light rounded-pill px-3 shadow-sm">
+                    <i class="fa-solid fa-clone me-1 text-teal"></i>Clone
+                </a>
+            </div>
+
+            <!-- Export Buttons -->
+            <div class="d-flex gap-2 justify-content-end">
+                <a href="{{ url_for('export_trip_pdf', trip_id=trip.id) }}" class="btn btn-sm btn-outline-secondary rounded-pill px-3">
+                    <i class="fa-solid fa-file-pdf me-1"></i>Export Itinerary
+                </a>
+                {% if trip.author == current_user %}
+                <a href="{{ url_for('export_trip_expenses', trip_id=trip.id) }}" class="btn btn-sm btn-outline-secondary rounded-pill px-3">
+                    <i class="fa-solid fa-file-csv me-1"></i>Export Expenses
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tab Navigation System -->
+<ul class="nav nav-pills mb-4 gap-2 border-bottom pb-3" id="tripTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active rounded-pill px-4 fw-semibold" id="itinerary-tab" data-bs-toggle="tab" data-bs-target="#itinerary" type="button" role="tab">
+            <i class="fa-solid fa-route me-2"></i>Itinerary Map & Timeline
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link rounded-pill px-4 fw-semibold" id="budget-tab" data-bs-toggle="tab" data-bs-target="#budget" type="button" role="tab">
+            <i class="fa-solid fa-wallet me-2"></i>Budget & Expenses
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link rounded-pill px-4 fw-semibold" id="packing-tab" data-bs-toggle="tab" data-bs-target="#packing" type="button" role="tab" onclick="location.href='{{ url_for('trip_packing_view', trip_id=trip.id) }}'">
+            <i class="fa-solid fa-suitcase me-2"></i>Packing Checklist
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link rounded-pill px-4 fw-semibold" id="journal-tab" data-bs-toggle="tab" data-bs-target="#journal" type="button" role="tab" onclick="location.href='{{ url_for('trip_journal_view', trip_id=trip.id) }}'">
+            <i class="fa-solid fa-pencil me-2"></i>Travel Journal
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link rounded-pill px-4 fw-semibold" id="maps-tab" data-bs-toggle="tab" data-bs-target="#maps" type="button" role="tab" onclick="location.href='{{ url_for('trip_places_view', trip_id=trip.id) }}'">
+            <i class="fa-solid fa-map me-2"></i>Offline Maps & Place Notes
+        </button>
+    </li>
+</ul>
+
+<!-- Tab Contents -->
+<div class="tab-content" id="tripTabsContent">
+    
+    <!-- Timeline Tab -->
+    <div class="tab-pane fade show active" id="itinerary" role="tabpanel">
+        <div class="row">
+            <div class="col-lg-8">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="fw-bold m-0">Itinerary Journey</h5>
+                    {% if trip.author == current_user %}
+                    <div class="btn-group">
+                        <button class="btn btn-sm btn-premium rounded-start-pill" data-bs-toggle="modal" data-bs-target="#addStopModal">+ Add Destination</button>
+                        <button class="btn btn-sm btn-outline-teal rounded-end-pill" data-bs-toggle="modal" data-bs-target="#addSectionModal">+ Add General Activity</button>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <!-- Vertical Timeline -->
+                <div class="timeline-container" id="draggable-stops-container">
+                    {% if stops %}
+                        {% for stop in stops %}
+                        <div class="timeline-item draggable-stop-card glass-card p-3 mb-3 border-start border-primary border-4" data-id="{{ stop.id }}" draggable="true" ondragstart="handleDragStart(event)" ondragover="handleDragOver(event)" ondrop="handleDrop(event)" ondragend="handleDragEnd(event)">
+                            <div class="timeline-dot"></div>
+                            
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <h5 class="fw-bold mb-1 d-flex align-items-center">
+                                        <i class="fa-solid fa-arrows-up-down text-muted me-2" style="cursor: grab; font-size:0.9rem"></i>
+                                        {{ stop.city.name }}, {{ stop.city.country or '' }}
+                                    </h5>
+                                    <p class="text-muted small mb-2"><i class="fa-solid fa-calendar me-1"></i>{{ stop.arrival }} to {{ stop.depart }}</p>
+                                </div>
+                                <span class="badge bg-light text-teal">{{ stop.activities|length }} Planned Actions</span>
+                            </div>
+
+                            <!-- Stop Activities List -->
+                            <div class="mt-2">
+                                {% for act in stop.activities %}
+                                <div class="p-2 border rounded-3 bg-light mb-2 d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <span class="badge bg-secondary mb-1" style="font-size:0.65rem;">{{ act.category or 'Sightseeing' }}</span>
+                                        <strong class="d-block">{{ act.title }}</strong>
+                                        <small class="text-muted d-block">{{ act.description }}</small>
+                                        <small class="text-secondary"><i class="fa-regular fa-clock me-1"></i>{{ act.duration_hours }} hours</small>
+                                    </div>
+                                    <div class="text-end">
+                                        <span class="badge bg-teal-soft text-teal fw-semibold">${{ act.cost }}</span>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+
+                            {% if trip.author == current_user %}
+                            <button class="btn btn-sm btn-outline-teal mt-2 rounded-pill" data-bs-toggle="modal" data-bs-target="#addActivityModal-{{ stop.id }}">
+                                <i class="fa-solid fa-plus me-1"></i>Activity
+                            </button>
+                            
+                            <!-- Activity Modal definition -->
+                            <div class="modal fade" id="addActivityModal-{{ stop.id }}" tabindex="-1">
+                                <div class="modal-dialog">
+                                    <div class="modal-content glass-card p-2 border-0">
+                                        <form method="POST" action="{{ url_for('add_activity', trip_id=trip.id) }}">
+                                            <div class="modal-header border-0 pb-0">
+                                                <h5 class="modal-title fw-bold">Plan Activity in {{ stop.city.name }}</h5>
+                                            </div>
+                                            <div class="modal-body">
+                                                <input type="hidden" name="stop_id" value="{{ stop.id }}">
+                                                <div class="mb-3">
+                                                    <label class="form-label small fw-bold">Title</label>
+                                                    <input type="text" name="title" class="form-control rounded-3" placeholder="e.g. Visit Eiffel Tower" required>
+                                                </div>
+                                                <div class="row g-2">
+                                                    <div class="col-6 mb-3">
+                                                        <label class="form-label small fw-bold">Duration (Hours)</label>
+                                                        <input type="number" step="0.1" name="duration" class="form-control rounded-3" placeholder="e.g. 2.5">
+                                                    </div>
+                                                    <div class="col-6 mb-3">
+                                                        <label class="form-label small fw-bold">Estimated Cost ($)</label>
+                                                        <input type="number" step="0.01" name="cost" class="form-control rounded-3" placeholder="0.00">
+                                                    </div>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label class="form-label small fw-bold">Category</label>
+                                                    <select name="category" class="form-select rounded-3">
+                                                        <option value="Sightseeing">Sightseeing</option>
+                                                        <option value="Dining">Dining</option>
+                                                        <option value="Transport">Transport</option>
+                                                        <option value="Shopping">Shopping</option>
+                                                        <option value="Entertainment">Entertainment</option>
+                                                    </select>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label class="form-label small fw-bold">Description</label>
+                                                    <textarea name="description" class="form-control rounded-3" rows="2" placeholder="Local tips, ticket links..."></textarea>
+                                                </div>
+                                            </div>
+                                            <div class="modal-footer border-0 pt-0">
+                                                <button class="btn btn-premium rounded-pill px-4">Plan It</button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <!-- General Itinerary Sections -->
+                        {% for section in trip.sections %}
+                        <div class="glass-card mb-3 border-start border-4 border-primary p-3">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <h5 class="fw-bold mb-1">{{ section.title }}</h5>
+                                    <small class="text-muted mb-2"><i class="fa-solid fa-clock me-1"></i>Date: {{ section.date or 'Anytime' }}</small>
+                                    <p class="m-0 mt-2 text-secondary">{{ section.activity }}</p>
+                                </div>
+                                <div class="text-end">
+                                    <span class="badge bg-light text-teal">${{ section.budget }}</span>
+                                    {% if trip.author == current_user %}
+                                    <div class="mt-2">
+                                        <a href="{{ url_for('delete_section', section_id=section.id) }}" class="btn btn-sm btn-link text-danger text-decoration-none p-0"><i class="fa-regular fa-trash-can"></i></a>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        {% else %}
+                        <div class="glass-card text-center py-5">
+                            <i class="fa-solid fa-calendar-xmark text-muted fs-1 mb-3"></i>
+                            <p class="text-muted m-0">No stops or activities added yet. Plan some destinations or sections above!</p>
+                        </div>
+                        {% endfor %}
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Right Timeline column summary -->
+            <div class="col-lg-4">
+                <div class="glass-card p-3">
+                    <h5 class="fw-bold mb-3"><i class="fa-solid fa-clipboard-list text-teal me-2"></i>Quick Overview</h5>
+                    <div class="d-flex justify-content-between border-bottom pb-2 mb-2">
+                        <span class="text-muted">Total Planned Days</span>
+                        <span class="fw-bold">{{ (trip.end_date - trip.start_date).days + 1 }} Days</span>
+                    </div>
+                    <div class="d-flex justify-content-between border-bottom pb-2 mb-2">
+                        <span class="text-muted">Stops/Cities</span>
+                        <span class="fw-bold">{{ trip.stops|length }}</span>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span class="text-muted">Total Action Items</span>
+                        {% set total_activities = namespace(count=0) %}
+                        {% for s in trip.stops %}
+                            {% set total_activities.count = total_activities.count + s.activities|length %}
+                        {% endfor %}
+                        <span class="fw-bold">{{ total_activities.count }} activities</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Budget & Expenses Tab -->
+    <div class="tab-pane fade" id="budget" role="tabpanel">
+        <div class="row">
+            <!-- Left Side Budget details -->
+            <div class="col-lg-8">
+                <!-- AI Expenses Assistant Prompt Panel -->
+                <div class="glass-card mb-4 border border-teal" style="background: rgba(0, 128, 128, 0.03);">
+                    <div class="d-flex align-items-center gap-3 mb-3">
+                        <div class="bg-teal text-white rounded-circle p-2 d-flex align-items-center justify-content-center" style="width:40px; height:40px">
+                            <i class="fa-solid fa-robot"></i>
+                        </div>
+                        <div>
+                            <h6 class="fw-bold m-0">AI Travel Expense Assistant</h6>
+                            <small class="text-muted">Ask local AI (Ollama) to evaluate your spending habits and suggest budget hacks.</small>
+                        </div>
+                    </div>
+                    <button class="btn btn-premium btn-sm rounded-pill" onclick="requestExpenseAnalysis()">
+                        <i class="fa-solid fa-wand-magic-sparkles me-2"></i>Analyze Expenses & Forecast Savings
+                    </button>
+                    
+                    <div id="expense-analysis-output" class="mt-3 bg-white p-3 rounded-3 d-none shadow-sm border border-light" style="max-height: 250px; overflow-y: auto;">
+                        <!-- AI analysis markdown goes here -->
+                        <div class="skeleton-line"></div>
+                        <div class="skeleton-line" style="width:80%"></div>
+                    </div>
+                </div>
+
+                <!-- Logged Expense items -->
+                <div class="glass-card mb-4">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="fw-bold m-0">Expenses Log</h5>
+                        {% if trip.author == current_user %}
+                        <button class="btn btn-sm btn-premium rounded-pill" data-bs-toggle="modal" data-bs-target="#addExpenseModal">+ Add Expense</button>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="table-responsive">
+                        <table class="table align-middle">
+                            <thead>
+                                <tr class="text-muted small">
+                                    <th>Date</th>
+                                    <th>Title</th>
+                                    <th>Category</th>
+                                    <th>Amount</th>
+                                    {% if trip.author == current_user %}
+                                    <th class="text-end">Actions</th>
+                                    {% endif %}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for exp in trip.expenses %}
+                                <tr>
+                                    <td>{{ exp.date or 'N/A' }}</td>
+                                    <td>
+                                        <div class="fw-semibold">{{ exp.title }}</div>
+                                        {% if exp.description %}
+                                        <small class="text-muted d-block" style="font-size:0.75rem;">{{ exp.description }}</small>
+                                        {% endif %}
+                                    </td>
+                                    <td><span class="badge bg-light text-teal">{{ exp.category }}</span></td>
+                                    <td class="fw-bold">${{ "%.2f"|format(exp.amount) }}</td>
+                                    {% if trip.author == current_user %}
+                                    <td class="text-end">
+                                        <a href="{{ url_for('delete_expense', trip_id=trip.id, expense_id=exp.id) }}" class="text-danger btn btn-link p-0"><i class="fa-regular fa-trash-can"></i></a>
+                                    </td>
+                                    {% endif %}
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="5" class="text-center text-muted py-3">No expenses logged. Plan activities or add custom expenses.</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column Budget calculations / Health score -->
+            <div class="col-lg-4">
+                <!-- Health Score Widgets -->
+                <div class="glass-card mb-4 text-center py-4">
+                    <h5 class="fw-bold mb-3">Budget Health Score</h5>
+                    <div class="position-relative d-inline-block">
+                        <!-- Custom Gauge SVG -->
+                        <svg width="150" height="150" viewBox="0 0 36 36">
+                            <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#edf2f7" stroke-width="3" />
+                            <path class="circle" stroke-dasharray="{{ health_score }}, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="var(--primary)" stroke-width="3" stroke-linecap="round" />
+                        </svg>
+                        <div class="position-absolute top-50 start-50 translate-middle">
+                            <h2 class="fw-bold m-0">{{ health_score }}</h2>
+                            <small class="text-muted d-block" style="font-size:0.65rem;">score</small>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 px-3">
+                        {% if budget_status %}
+                            {% if budget_status.status == 'over' %}
+                                <div class="p-3 bg-danger-soft text-danger rounded-4">
+                                    <i class="fa-solid fa-triangle-exclamation mb-2 fs-4"></i>
+                                    <strong class="d-block">Over Budget!</strong>
+                                    <small>Exceeded limit by ${{ "%.2f"|format(budget_status.amount) }}</small>
+                                </div>
+                            {% else %}
+                                <div class="p-3 bg-success-soft text-teal rounded-4">
+                                    <i class="fa-solid fa-circle-check mb-2 fs-4"></i>
+                                    <strong class="d-block">On Track!</strong>
+                                    <small>Remaining balance: ${{ "%.2f"|format(budget_status.amount) }}</small>
+                                </div>
+                            {% endif %}
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Category Doughnut chart -->
+                <div class="glass-card">
+                    <h5 class="fw-bold mb-3">Cost Breakdown</h5>
+                    <div style="height: 200px; position: relative;">
+                        <canvas id="categoryChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Social & Rating Feed -->
+<hr class="my-5">
+<div class="row">
+    <div class="col-lg-8">
+        <h4 class="fw-bold mb-3"><i class="fa-solid fa-comments text-teal me-2"></i>Reviews & Comments</h4>
+        
+        <!-- Add comment form -->
+        {% if current_user.is_authenticated %}
+        <div class="glass-card mb-4 p-3">
+            <form method="POST" action="{{ url_for('add_comment', trip_id=trip.id) }}">
+                <div class="mb-3">
+                    <textarea name="content" class="form-control rounded-3" rows="3" placeholder="Leave a review or ask a question about this itinerary..." required></textarea>
+                </div>
+                <div class="d-flex justify-content-between align-items-center">
+                    <button class="btn btn-premium rounded-pill px-4">Post Comment</button>
+                </div>
+            </form>
+        </div>
+        
+        <!-- Add Rating form -->
+        <div class="glass-card mb-4 p-3">
+            <form method="POST" action="{{ url_for('add_rating', trip_id=trip.id) }}">
+                <div class="d-flex align-items-center justify-content-between">
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="small fw-semibold text-muted">Your Star Rating:</span>
+                        <div class="rating-stars">
+                            <input type="radio" name="rating" value="5" id="5stars"><label for="5stars">★</label>
+                            <input type="radio" name="rating" value="4" id="4stars"><label for="4stars">★</label>
+                            <input type="radio" name="rating" value="3" id="3stars"><label for="3stars">★</label>
+                            <input type="radio" name="rating" value="2" id="2stars"><label for="2stars">★</label>
+                            <input type="radio" name="rating" value="1" id="1stars" checked><label for="1stars">★</label>
+                        </div>
+                    </div>
+                    <button class="btn btn-sm btn-outline-teal rounded-pill">Submit Rate</button>
+                </div>
+            </form>
+        </div>
+        {% endif %}
+
+        <!-- Comments loop -->
+        {% for comment in comments %}
+        <div class="p-3 bg-white rounded-4 border mb-2 d-flex gap-3">
+            <div class="rounded-circle bg-teal text-white d-flex align-items-center justify-content-center fw-bold" style="width:36px; height:36px; min-width:36px">
+                {{ comment.user.username[0]|upper }}
+            </div>
+            <div>
+                <div class="d-flex align-items-center gap-2">
+                    <strong class="small">@{{ comment.user.username }}</strong>
+                    <span class="xp-level-badge" style="font-size:0.65rem; padding: 2px 6px;">Lv {{ comment.user.level }}</span>
+                    <small class="text-secondary" style="font-size:0.7rem">{{ comment.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                </div>
+                <p class="m-0 mt-1 text-secondary" style="font-size:0.9rem;">{{ comment.content }}</p>
+            </div>
+        </div>
+        {% else %}
+        <p class="text-muted py-3">No comments yet. Be the first to share your thoughts!</p>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- MODALS -->
+
+<!-- Add Stop Modal -->
+<div class="modal fade" id="addStopModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content glass-card border-0 p-2">
+            <form method="POST" action="{{ url_for('add_stop', trip_id=trip.id) }}">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold">Add Stop Location</h5>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Destination City</label>
+                        <input type="text" name="city" class="form-control rounded-3" placeholder="e.g. Tokyo" required>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-6 mb-3">
+                            <label class="form-label small fw-bold">Arrival Date</label>
+                            <input type="date" name="arrival" class="form-control rounded-3">
+                        </div>
+                        <div class="col-6 mb-3">
+                            <label class="form-label small fw-bold">Departure Date</label>
+                            <input type="date" name="depart" class="form-control rounded-3">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 pt-0">
+                    <button class="btn btn-premium rounded-pill px-4">Add Stop</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Add Section Modal -->
+<div class="modal fade" id="addSectionModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content glass-card border-0 p-2">
+            <form method="POST" action="{{ url_for('add_section', trip_id=trip.id) }}">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold">Add General Activity Section</h5>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Title</label>
+                        <input type="text" name="title" class="form-control rounded-3" placeholder="e.g. Flight Details" required>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-6 mb-3">
+                            <label class="form-label small fw-bold">Date</label>
+                            <input type="date" name="date" class="form-control rounded-3">
+                        </div>
+                        <div class="col-6 mb-3">
+                            <label class="form-label small fw-bold">Estimated Cost ($)</label>
+                            <input type="number" step="0.01" name="budget" class="form-control rounded-3" placeholder="0.00">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Details</label>
+                        <textarea name="activity" class="form-control rounded-3" rows="3" placeholder="Details of this itinerary section..." required></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 pt-0">
+                    <button class="btn btn-premium rounded-pill px-4">Add Activity</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Add Expense Modal -->
+<div class="modal fade" id="addExpenseModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content glass-card border-0 p-2">
+            <form method="POST" action="{{ url_for('add_expense', trip_id=trip.id) }}">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold">Log Custom Expense</h5>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Expense Title</label>
+                        <input type="text" name="title" class="form-control rounded-3" placeholder="e.g. Hotel payment" required>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-6 mb-3">
+                            <label class="form-label small fw-bold">Amount ($)</label>
+                            <input type="number" step="0.01" name="amount" class="form-control rounded-3" placeholder="0.00" required>
+                        </div>
+                        <div class="col-6 mb-3">
+                            <label class="form-label small fw-bold">Date</label>
+                            <input type="date" name="date" class="form-control rounded-3">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Category</label>
+                        <select name="category" class="form-select rounded-3">
+                            <option value="Lodging">Lodging</option>
+                            <option value="Transport">Transport</option>
+                            <option value="Food">Food</option>
+                            <option value="Activities">Activities</option>
+                            <option value="Shopping">Shopping</option>
+                            <option value="Others">Others</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Description</label>
+                        <textarea name="description" class="form-control rounded-3" rows="2" placeholder="Details..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 pt-0">
+                    <button class="btn btn-premium rounded-pill px-4">Log Expense</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+
+<!-- Chart.js & Trip view Script -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    // Build Category chart
+    const catCtx = document.getElementById('categoryChart').getContext('2d');
+    const chartLabels = [];
+    const chartData = [];
+    
+    {% for cat, amt in category_summary.items() %}
+        chartLabels.push("{{ cat }}");
+        chartData.push({{ amt }});
+    {% endfor %}
+    
+    if (chartData.length > 0) {
+        new Chart(catCtx, {
+            type: 'doughnut',
+            data: {
+                labels: chartLabels,
+                datasets: [{
+                    data: chartData,
+                    backgroundColor: ['#008080', '#20c997', '#f59e0b', '#3b82f6', '#ec4899', '#6366f1']
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom', labels: { boxWidth: 10 } }
+                }
+            }
+        });
+    }
+
+    // AI Expense analysis trigger
+    function requestExpenseAnalysis() {
+        const outDiv = document.getElementById('expense-analysis-output');
+        outDiv.classList.remove('d-none');
+        outDiv.innerHTML = '<div class="skeleton-line"></div><div class="skeleton-line" style="width:80%"></div>';
+        
+        fetch(`/api/trip/{{ trip.id }}/expenses/analysis`)
+            .then(r => r.json())
+            .then(data => {
+                // Return Markdown parsed HTML
+                // For simplicity offline, print line breaks and custom list bullets
+                let html = data.analysis.replace(/\n/g, "<br>").replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+                outDiv.innerHTML = `<div style="font-size:0.85rem; line-height:1.6;" class="text-secondary">${html}</div>`;
+                triggerToast("AI Expense Assistant", "Expense report completed!");
+            });
+    }
+
+    // Likes toggles
+    function toggleLike(tripId) {
+        fetch(`/trip/${tripId}/like`, { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    const icon = document.getElementById('like-icon');
+                    const countSpan = document.getElementById('likes-count');
+                    
+                    if (data.liked) {
+                        icon.className = 'fa-solid fa-heart text-danger me-1';
+                        triggerToast("Liked!", "Itinerary added to recommendations.");
+                    } else {
+                        icon.className = 'fa-regular fa-heart me-1';
+                    }
+                    countSpan.innerText = data.likes_count;
+                }
+            });
+    }
+
+    // Bookmark toggles
+    function toggleBookmark(tripId) {
+        fetch(`/trip/${tripId}/bookmark`, { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    const icon = document.getElementById('bookmark-icon');
+                    if (data.bookmarked) {
+                        icon.className = 'fa-solid fa-bookmark text-warning me-1';
+                        triggerToast("Saved", "Itinerary saved to your bookmarks.");
+                    } else {
+                        icon.className = 'fa-regular fa-bookmark me-1';
+                    }
+                }
+            });
+    }
+
+    // Follow toggles
+    function toggleFollow(userId) {
+        fetch(`/user/${userId}/follow`, { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    triggerToast("Success", data.following ? "You followed the creator." : "Unfollowed creator.");
+                }
+            });
+    }
+
+    // Drag-and-drop stop reordering script
+    let dragSrcEl = null;
+    
+    function handleDragStart(e) {
+        dragSrcEl = this;
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/html', this.innerHTML);
+        this.style.opacity = '0.4';
+    }
+
+    function handleDragOver(e) {
+        if (e.preventDefault) {
+            e.preventDefault();
+        }
+        e.dataTransfer.dropEffect = 'move';
+        return false;
+    }
+
+    function handleDrop(e) {
+        if (e.stopPropagation) {
+            e.stopPropagation();
+        }
+        
+        if (dragSrcEl !== this) {
+            // Swap ID attributes
+            let srcId = dragSrcEl.getAttribute('data-id');
+            let destId = this.getAttribute('data-id');
+            
+            dragSrcEl.setAttribute('data-id', destId);
+            this.setAttribute('data-id', srcId);
+            
+            // Swap inner html
+            dragSrcEl.innerHTML = this.innerHTML;
+            this.innerHTML = e.dataTransfer.getData('text/html');
+            
+            // Trigger API to save orders
+            saveStopsOrder();
+        }
+        return false;
+    }
+
+    function handleDragEnd(e) {
+        this.style.opacity = '1';
+    }
+
+    function saveStopsOrder() {
+        const stopCards = document.querySelectorAll('.draggable-stop-card');
+        const orders = [];
+        stopCards.forEach(card => {
+            orders.push(parseInt(card.getAttribute('data-id')));
+        });
+        
+        fetch(`/api/trip/{{ trip.id }}/reorder_stops`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orders: orders })
+        }).then(r => r.json()).then(data => {
+            if (data.success) {
+                triggerToast("Order Saved", "Stop chronology updated.");
+            }
+        });
+    }
+</script>
+
+<style>
+    .circle-bg { stroke: #edf2f7; }
+    .circle { transition: stroke-dasharray 0.35s; transform: rotate(-90deg); transform-origin: 50% 50%; }
+    
+    /* Star rating radio styles */
+    .rating-stars {
+        display: flex;
+        flex-direction: row-reverse;
+        justify-content: flex-end;
+    }
+    .rating-stars input { display: none; }
+    .rating-stars label {
+        font-size: 1.5rem;
+        color: #cbd5e0;
+        cursor: pointer;
+        transition: color 0.1s;
+    }
+    .rating-stars label:hover,
+    .rating-stars label:hover ~ label,
+    .rating-stars input:checked ~ label {
+        color: #f59e0b;
+    }
+</style>
+{% endblock %}
