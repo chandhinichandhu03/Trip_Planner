@@ -1,6 +1,7 @@
 import os
 import requests
 import json
+import threading
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
@@ -23,6 +24,22 @@ class AIEngine:
         self.vector_store = None
         self._initialize_ai()
 
+    def trigger_background_pull(self, model_name):
+        """Pulls the specified model from Ollama in a background thread"""
+        def pull():
+            print(f"Ollama: Starting background pull for model '{model_name}'...")
+            try:
+                r = requests.post(f"{OLLAMA_URL}/api/pull", json={"name": model_name}, timeout=600)
+                if r.status_code == 200:
+                    print(f"Ollama: Successfully pulled model '{model_name}'")
+                else:
+                    print(f"Ollama: Failed to pull model '{model_name}': {r.status_code} - {r.text}")
+            except Exception as ex:
+                print(f"Ollama: Exception during background pull for '{model_name}': {ex}")
+        
+        t = threading.Thread(target=pull, daemon=True)
+        t.start()
+
     def _initialize_ai(self):
         """Safely verify Ollama availability and initialize LangChain embeddings and ChromaDB"""
         try:
@@ -42,9 +59,14 @@ class AIEngine:
                         LLM_MODEL = models[0]
                 
                 # Check for embeddings model
-                if EMBED_MODEL not in models:
-                    # Fallback to local OllamaEmbeddings anyway, it will pull automatically or raise a warning
-                    pass
+                has_embed = False
+                for m in models:
+                    if EMBED_MODEL in m or "nomic-embed-text" in m:
+                        has_embed = True
+                        break
+                
+                if not has_embed:
+                    self.trigger_background_pull(EMBED_MODEL)
 
                 self.embeddings = OllamaEmbeddings(model=EMBED_MODEL, base_url=OLLAMA_URL)
                 self.vector_store = Chroma(
@@ -86,7 +108,7 @@ class AIEngine:
         except Exception as e:
             return self._mock_llm_response(prompt, error=str(e))
 
-    def ingest_document(self, file_path):
+    def ingest_document(self, file_path, user_id=None):
         """Load, split, and ingest a PDF/TXT guide into local ChromaDB"""
         if not self.is_available() or not self.vector_store:
             return False, "Ollama/ChromaDB is not active."
@@ -106,18 +128,27 @@ class AIEngine:
             filename = os.path.basename(file_path)
             for chunk in chunks:
                 chunk.metadata["source"] = filename
+                if user_id is not None:
+                    chunk.metadata["user_id"] = user_id
                 
             self.vector_store.add_documents(chunks)
             return True, f"Successfully indexed {len(chunks)} text chunks."
         except Exception as e:
-            return False, f"Ingestion error: {str(e)}"
+            error_str = str(e)
+            if "404" in error_str or "not found" in error_str:
+                self.trigger_background_pull(EMBED_MODEL)
+                return False, "The embedding model 'nomic-embed-text' was not found in Ollama and is now being downloaded automatically in the background. Please wait a minute and try uploading again."
+            return False, f"Ingestion error: {error_str}"
 
-    def similarity_search(self, query, k=3):
+    def similarity_search(self, query, user_id=None, k=3):
         """Search vector database for top matching travel guides context"""
         if not self.is_available() or not self.vector_store:
             return []
         try:
-            results = self.vector_store.similarity_search(query, k=k)
+            filter_dict = {}
+            if user_id is not None:
+                filter_dict["user_id"] = user_id
+            results = self.vector_store.similarity_search(query, k=k, filter=filter_dict if filter_dict else None)
             return [{"text": doc.page_content, "source": doc.metadata.get("source", "Unknown")} for doc in results]
         except Exception as e:
             print("ChromaDB search failed:", e)
@@ -129,6 +160,7 @@ class AIEngine:
             "You are GlobeTrotter AI, an advanced, premium offline AI travel assistant. "
             "Help the user plan their dream itineraries, discover hidden gems, allocate budgets, "
             "suggest local culture, packing lists, and offer travel insights. "
+            "IMPORTANT: If the user asks about an uploaded document, guide, or specific trip plans, you MUST prioritize the information in the provided 'Relevant guides context' to answer. If the context contains the answer, base your response directly on it and mention the source filename. Do not fallback to generic suggestions if the context contains relevant information. "
             "Use the provided context documents if applicable. Keep recommendations realistic, specific, and exciting."
         )
         

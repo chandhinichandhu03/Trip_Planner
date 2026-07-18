@@ -373,10 +373,23 @@ def create_trip():
         return redirect(url_for('view_trip', trip_id=new_trip.id))
     return render_template('create_trip.html')
 
+@app.route('/trip/<int:trip_id>/delete', methods=['POST'])
+@login_required
+def delete_trip(trip_id):
+    trip = Trip.query.get_or_404(trip_id)
+    if trip.user_id != current_user.id:
+        flash("Unauthorized deletion attempt.")
+        return redirect(url_for('dashboard'))
+    
+    db.session.delete(trip)
+    db.session.commit()
+    flash("Trip plan deleted successfully.")
+    return redirect(url_for('dashboard'))
+
 @app.route('/trip/<int:trip_id>')
 def view_trip(trip_id):
     trip = Trip.query.get_or_404(trip_id)
-    if not trip.is_public and (not current_user.is_authenticated or trip.author != current_user):
+    if not trip.is_public and (not current_user.is_authenticated or trip.user_id != current_user.id):
         flash("You do not have permission to view this trip.")
         return redirect(url_for('dashboard'))
         
@@ -446,7 +459,7 @@ def public_trip(trip_id):
 @login_required
 def add_section(trip_id):
     trip = Trip.query.get_or_404(trip_id)
-    if trip.author != current_user: return "Unauthorized", 403
+    if trip.user_id != current_user.id: return "Unauthorized", 403
     title = request.form.get('title')
     activity = request.form.get('activity')
     budget = float(request.form.get('budget') or 0)
@@ -464,7 +477,7 @@ def add_section(trip_id):
 @login_required
 def delete_section(section_id):
     section = TripSection.query.get_or_404(section_id)
-    if section.trip.author != current_user: return "Unauthorized", 403
+    if section.trip.user_id != current_user.id: return "Unauthorized", 403
     trip_id = section.trip.id
     db.session.delete(section)
     db.session.commit()
@@ -475,7 +488,7 @@ def delete_section(section_id):
 @login_required
 def add_stop(trip_id):
     trip = Trip.query.get_or_404(trip_id)
-    if trip.author != current_user: return "Unauthorized", 403
+    if trip.user_id != current_user.id: return "Unauthorized", 403
     city_name = request.form.get('city')
     arrival = request.form.get('arrival')
     depart = request.form.get('depart')
@@ -508,7 +521,7 @@ def add_stop(trip_id):
 @login_required
 def add_activity(trip_id):
     trip = Trip.query.get_or_404(trip_id)
-    if trip.author != current_user: return "Unauthorized", 403
+    if trip.user_id != current_user.id: return "Unauthorized", 403
     stop_id = request.form.get('stop_id')
     title = request.form.get('title')
     description = request.form.get('description')
@@ -529,7 +542,7 @@ def add_activity(trip_id):
 @login_required
 def api_reorder_stops(trip_id):
     trip = Trip.query.get_or_404(trip_id)
-    if trip.author != current_user: return jsonify({'error': 'unauthorized'}), 403
+    if trip.user_id != current_user.id: return jsonify({'error': 'unauthorized'}), 403
     
     order_data = request.json.get('orders', []) # list of Stop IDs in order
     for idx, stop_id in enumerate(order_data):
@@ -545,7 +558,7 @@ def api_reorder_stops(trip_id):
 @login_required
 def add_expense(trip_id):
     trip = Trip.query.get_or_404(trip_id)
-    if trip.author != current_user: return "Unauthorized", 403
+    if trip.user_id != current_user.id: return "Unauthorized", 403
     
     title = request.form.get('title')
     amount = float(request.form.get('amount') or 0)
@@ -575,7 +588,7 @@ def add_expense(trip_id):
 @login_required
 def delete_expense(trip_id, expense_id):
     trip = Trip.query.get_or_404(trip_id)
-    if trip.author != current_user: return "Unauthorized", 403
+    if trip.user_id != current_user.id: return "Unauthorized", 403
     exp = Expense.query.get_or_404(expense_id)
     db.session.delete(exp)
     db.session.commit()
@@ -585,7 +598,7 @@ def delete_expense(trip_id, expense_id):
 @login_required
 def api_expense_analysis(trip_id):
     trip = Trip.query.get_or_404(trip_id)
-    if trip.author != current_user: return jsonify({'error': 'unauthorized'}), 403
+    if trip.user_id != current_user.id: return jsonify({'error': 'unauthorized'}), 403
     
     # Serialize expenses
     expenses = []
@@ -628,7 +641,7 @@ def api_ai_chat():
         history.append({'role': msg.role, 'content': msg.content})
         
     # Search RAG guides
-    context_docs = ai_engine.similarity_search(user_msg, k=3)
+    context_docs = ai_engine.similarity_search(user_msg, user_id=current_user.id, k=3)
     
     # Query model
     ai_resp = ai_engine.travel_chat(user_msg, history, context_docs)
@@ -659,7 +672,7 @@ def api_ai_upload_rag():
     db.session.commit()
     
     # Chroma DB Ingest
-    success, msg = ai_engine.ingest_document(filepath)
+    success, msg = ai_engine.ingest_document(filepath, user_id=current_user.id)
     if success:
         add_xp(current_user, 30, f"Uploaded custom travel guide: {filename}")
         check_and_unlock_achievement(current_user, "rag_wizard", "RAG Cartographer")
@@ -683,14 +696,14 @@ def api_ai_suggest_itinerary():
 @login_required
 def trip_packing_view(trip_id):
     trip = Trip.query.get_or_404(trip_id)
-    if trip.author != current_user: return "Unauthorized", 403
+    if trip.user_id != current_user.id: return "Unauthorized", 403
     return render_template('packing.html', trip=trip)
 
 @app.route('/api/trip/<int:trip_id>/packing/generate', methods=['POST'])
 @login_required
 def api_packing_generate(trip_id):
     trip = Trip.query.get_or_404(trip_id)
-    if trip.author != current_user: return jsonify({'error': 'unauthorized'}), 403
+    if trip.user_id != current_user.id: return jsonify({'error': 'unauthorized'}), 403
     
     days = (trip.end_date - trip.start_date).days + 1
     ai_raw = ai_engine.generate_packing_list(trip.destination, days, trip.style or "Solo")
@@ -808,7 +821,7 @@ def api_packing_add():
 @login_required
 def trip_journal_view(trip_id):
     trip = Trip.query.get_or_404(trip_id)
-    if trip.author != current_user: return "Unauthorized", 403
+    if trip.user_id != current_user.id: return "Unauthorized", 403
     entries = JournalEntry.query.filter_by(trip_id=trip.id, user_id=current_user.id).order_by(JournalEntry.date.desc()).all()
     return render_template('journal.html', trip=trip, entries=entries)
 
@@ -816,7 +829,7 @@ def trip_journal_view(trip_id):
 @login_required
 def trip_journal_add(trip_id):
     trip = Trip.query.get_or_404(trip_id)
-    if trip.author != current_user: return "Unauthorized", 403
+    if trip.user_id != current_user.id: return "Unauthorized", 403
     
     title = request.form.get('title')
     content = request.form.get('content')
@@ -875,7 +888,7 @@ def toggle_like(trip_id):
         liked = True
         
         # Notify trip author and award social XP
-        if trip.author != current_user:
+        if trip.user_id != current_user.id:
             add_xp(trip.author, 15, f"Your trip '{trip.name}' was liked by {current_user.username}!")
             notif = Notification(user_id=trip.author.id, title="Trip Liked! ❤️", 
                                  content=f"{current_user.username} liked your itinerary '{trip.name}'.", 
@@ -913,7 +926,7 @@ def add_comment(trip_id):
         db.session.commit()
         add_xp(current_user, 5, "Added comment on trip")
         
-        if trip.author != current_user:
+        if trip.user_id != current_user.id:
             notif = Notification(user_id=trip.author.id, title="New Comment 💬", 
                                  content=f"{current_user.username} commented on '{trip.name}': {content[:40]}...", 
                                  type="social")
@@ -1023,14 +1036,14 @@ def api_smart_search():
 @login_required
 def trip_places_view(trip_id):
     trip = Trip.query.get_or_404(trip_id)
-    if trip.author != current_user: return "Unauthorized", 403
+    if trip.user_id != current_user.id: return "Unauthorized", 403
     return render_template('maps.html', trip=trip)
 
 @app.route('/trip/<int:trip_id>/places/add', methods=['POST'])
 @login_required
 def trip_places_add(trip_id):
     trip = Trip.query.get_or_404(trip_id)
-    if trip.author != current_user: return "Unauthorized", 403
+    if trip.user_id != current_user.id: return "Unauthorized", 403
     
     name = request.form.get('name')
     lat = float(request.form.get('lat') or 0.0)
@@ -1050,7 +1063,7 @@ def trip_places_add(trip_id):
 @login_required
 def delete_place(place_id):
     place = PlaceOfInterest.query.get_or_404(place_id)
-    if place.trip.author != current_user: return "Unauthorized", 403
+    if place.trip.user_id != current_user.id: return "Unauthorized", 403
     trip_id = place.trip_id
     db.session.delete(place)
     db.session.commit()
@@ -1060,7 +1073,7 @@ def delete_place(place_id):
 @app.route('/trip/<int:trip_id>/export/pdf')
 def export_trip_pdf(trip_id):
     trip = Trip.query.get_or_404(trip_id)
-    if not trip.is_public and (not current_user.is_authenticated or trip.author != current_user):
+    if not trip.is_public and (not current_user.is_authenticated or trip.user_id != current_user.id):
         return "Unauthorized", 403
         
     pdf_buffer = generate_itinerary_pdf(trip)
@@ -1080,7 +1093,7 @@ def export_trip_pdf(trip_id):
 @login_required
 def export_trip_expenses(trip_id):
     trip = Trip.query.get_or_404(trip_id)
-    if trip.author != current_user: return "Unauthorized", 403
+    if trip.user_id != current_user.id: return "Unauthorized", 403
     
     csv_file = generate_expenses_csv(trip, trip.expenses)
     
@@ -1150,7 +1163,7 @@ def search_activities():
 @login_required
 def itinerary_builder_view(trip_id):
     trip = Trip.query.get_or_404(trip_id)
-    if trip.author != current_user:
+    if trip.user_id != current_user.id:
         flash('You do not have permission to edit this itinerary.')
         return redirect(url_for('view_trip', trip_id=trip.id))
     return render_template('itinerary_builder.html', trip=trip)
@@ -1158,7 +1171,7 @@ def itinerary_builder_view(trip_id):
 @app.route('/api/trip/<int:trip_id>')
 def api_get_trip(trip_id):
     trip = Trip.query.get_or_404(trip_id)
-    if not trip.is_public and (not current_user.is_authenticated or trip.author != current_user):
+    if not trip.is_public and (not current_user.is_authenticated or trip.user_id != current_user.id):
         return jsonify({'error': 'forbidden'}), 403
     stops = []
     for s in sorted(trip.stops, key=lambda x: x.ord or 0):
@@ -1192,7 +1205,7 @@ def api_get_trip(trip_id):
 @app.route('/api/trip/<int:trip_id>/budget')
 def api_trip_budget(trip_id):
     trip = Trip.query.get_or_404(trip_id)
-    if not trip.is_public and (not current_user.is_authenticated or trip.author != current_user):
+    if not trip.is_public and (not current_user.is_authenticated or trip.user_id != current_user.id):
         return jsonify({'error': 'forbidden'}), 403
         
     section_cost = sum((s.budget or 0) for s in trip.sections)
@@ -1248,7 +1261,7 @@ def calendar_view():
 @login_required
 def copy_trip(trip_id):
     orig = Trip.query.get_or_404(trip_id)
-    if not orig.is_public and orig.author != current_user:
+    if not orig.is_public and orig.user_id != current_user.id:
         flash('Cannot copy private trip')
         return redirect(url_for('view_trip', trip_id=trip_id))
         

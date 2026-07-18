@@ -141,3 +141,13 @@ graph TD
 ### 5. Community Feed & Collaboration
 * **Pinterest-style Grid**: Displays public travel plans, photo-sharing cards, and detailed journals shared by other users.
 * **Cloning Itineraries**: Allows users to duplicate public itineraries into their personal workspace with one click.
+
+
+
+
+run code in terminal
+
+python -m venv venv
+venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+py app.py
